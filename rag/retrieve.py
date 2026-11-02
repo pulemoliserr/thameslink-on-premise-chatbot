@@ -70,7 +70,8 @@ class Retriever:
     def load(cls) -> "Retriever":
         path = config.INDEX_DIR / "chunks.jsonl"
         if not path.exists():
-            raise FileNotFoundError("No index found. Run:  python -m rag.ingest")
+            raise FileNotFoundError("No search index found. Download the documents and build the index first:  "
+                                    "python scripts/download_documents.py  then  python -m rag.ingest")
         chunks = [json.loads(line) for line in open(path, encoding="utf-8")]
         emb, model = None, None
         epath, mpath = config.INDEX_DIR / "embeddings.npy", config.INDEX_DIR / "embeddings.json"

@@ -15,6 +15,8 @@ from rag.usecases import BY_ID  # noqa: E402
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(auth, "USERS_FILE", tmp_path / "users.json")
     monkeypatch.setattr(auth, "AUDIT_FILE", tmp_path / "audit.jsonl")
+    monkeypatch.setattr(auth, "DEMO_FILE", tmp_path / "demo_credentials.json")
+    monkeypatch.delenv("DEMO_LOGINS", raising=False)
 
 
 def test_password_is_not_stored_in_plain_text(tmp_path):
@@ -89,3 +91,40 @@ def test_audit_log_has_no_passwords():
     text = auth.AUDIT_FILE.read_text()
     assert "river-stone-77" not in text and "typo-stone-77" not in text
     assert [e["event"] for e in auth.read_audit()][:2] == ["login_failed", "login"]
+
+
+def test_demo_accounts_listed_and_usable():
+    assert auth.demo_logins() == []                    # nothing listed until demo accounts exist
+    created = auth.create_demo_accounts()
+    assert len(created) == len(auth.ROLES)
+    listed = auth.demo_logins()
+    assert [d["role"] for d in listed] == list(auth.ROLES)
+    for d in listed:
+        assert auth.authenticate(d["username"], d["password"]).role == d["role"]
+    assert "pw_hash" not in auth.DEMO_FILE.read_text()
+
+
+def test_demo_list_hidden_by_env(monkeypatch):
+    auth.create_demo_accounts()
+    monkeypatch.setenv("DEMO_LOGINS", "0")
+    assert auth.demo_logins() == []
+
+
+def test_demo_reset_gives_new_working_passwords():
+    first = {u: pw for u, pw, _ in auth.create_demo_accounts()}
+    again = auth.create_demo_accounts()                 # without --reset: unchanged
+    assert all(status == "exists" and first[u] == pw for u, pw, status in again)
+    second = {u: pw for u, pw, _ in auth.create_demo_accounts(reset=True)}
+    assert all(first[u] != second[u] for u in first)
+    assert auth.authenticate("demo.claims", second["demo.claims"]).role == "claims"
+
+
+def test_demo_password_cannot_be_changed_and_reset_or_disable_unlists():
+    auth.create_demo_accounts()
+    pw = {d["username"]: d["password"] for d in auth.demo_logins()}
+    with pytest.raises(auth.AuthError, match="Demo accounts"):
+        auth.change_password("demo.revenue", pw["demo.revenue"], "a-new-pass-123")
+    auth.reset_password("demo.revenue", by="demo.admin")
+    auth.update_user("demo.assist", by="demo.admin", active=False)
+    names = {d["username"] for d in auth.demo_logins()}
+    assert "demo.revenue" not in names and "demo.assist" not in names and "demo.claims" in names

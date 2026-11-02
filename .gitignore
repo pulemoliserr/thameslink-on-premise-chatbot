@@ -12,4 +12,6 @@ eval/results/
 data/users.json
 data/audit.jsonl
 data/caselog.jsonl
+data/demo_credentials.json
+*.tmp
 state/

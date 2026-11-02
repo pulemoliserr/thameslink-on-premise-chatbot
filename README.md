@@ -98,9 +98,15 @@ python -m venv .venv
 pip install -r requirements.txt
 
 python -m rag.ingest          # read the PDFs and build the search index (~15 s)
-python -m rag.auth demo       # one demo account per user group; passwords are printed once
-streamlit run app.py          # opens http://localhost:8501 — sign in with a demo account
+python -m rag.auth demo       # one demo account per user group
+python -m streamlit run app.py   # opens http://localhost:8501
 ```
+
+The sign-in page has a **Demo accounts** dropdown: pick a user group to see its username and password (with copy buttons), or click **Fill in the sign-in form**. Demo passwords can't be changed from the app, so a shared demo keeps working.
+
+- New demo passwords: `python -m rag.auth demo --reset`
+- Hide the dropdown: set `DEMO_LOGINS=0`, or delete `demo_credentials.json` from the data/state folder
+- If you publish the app online, anyone can use the listed accounts, including `demo.admin` (which can manage users). Disable that account in the admin area if you don't want visitors to have it. Before any real use, remove all demo accounts.
 
 Without a language model the app runs in **"quote documents only"** mode: it finds the right passages and shows the most relevant sentences with citations. This is also the search-only baseline for the evaluation.
 
@@ -163,7 +169,7 @@ You can also use the terminal: `python -m rag.cli "Can a passenger take a bicycl
 | Sign-in | `rag/auth.py` | Accounts, roles, password hashing, lockout, audit log; command line for account management. |
 | Interface | `app.py` | Streamlit web app: sign-in, one area per role, the advisors, chat with sources, 👍/👎 feedback, and the Administration area (users, activity, feedback, saved cases, system status). |
 | Evaluation | `eval/` | 32 test questions with expected sources and answer facts; computes the metrics below. |
-| Tests | `tests/` | 41 automated tests (`python -m pytest -q`): ingestion, search, every advisor rule and its citation, each use case's scope and example questions, the case log, sign-in (hashing, lockout, roles, audit log), and a **fake Ollama server** (`tests/mock_ollama.py`) that exercises the full LLM path without downloading a model. |
+| Tests | `tests/` | 45 automated tests (`python -m pytest -q`): ingestion, search, every advisor rule and its citation, each use case's scope and example questions, the case log, sign-in (hashing, lockout, roles, audit log), and a **fake Ollama server** (`tests/mock_ollama.py`) that exercises the full LLM path without downloading a model. |
 
 To add a document: put the PDF in `data/raw/`, add an entry to `data/documents.yaml`, run `python -m rag.ingest` (add `--embed` if using Ollama).
 
