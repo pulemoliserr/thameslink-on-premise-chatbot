@@ -1,0 +1,246 @@
+# Test questions for the Frontline Assistant.
+#
+# Each answerable question lists:
+#   docs:     document ids where the answer may be found (see data/documents.yaml)
+#   evidence: regular expression a passage must contain to count as the right passage
+#   facts:    regular expressions the generated answer must contain to count as correct
+#   ref:      the reference answer, with its source (for humans)
+# Unanswerable questions (answerable: false) test whether the system admits it doesn't know.
+#
+# Questions are phrased the way staff might ask, deliberately using different words
+# from the documents. Add your own, and get Thameslink staff to review them.
+
+questions:
+  - id: q01
+    question: How far in advance should a passenger book assistance?
+    category: accessibility
+    docs: [atp, mra, nrcot]
+    evidence: "two hours|2 hours’ notice"
+    facts: ["two hours|2 hours"]
+    ref: Two hours before travel is recommended (Accessible Travel Policy A.1; Conditions of Travel 21.2).
+
+  - id: q02
+    question: A passenger forgot their Railcard and had to pay extra. Can they get that money back?
+    category: ticketing
+    docs: [nrcot]
+    evidence: "8\\.5"
+    facts: ["refund"]
+    ref: Yes, a refund may be claimed under Condition 8.5–8.6 if they forgot to carry a valid Railcard.
+
+  - id: q03
+    question: How many bags is a passenger allowed to bring on board?
+    category: luggage
+    docs: [nrcot]
+    evidence: "three items of luggage"
+    facts: ["three|3"]
+    ref: Up to three items of luggage (Condition 23.1).
+
+  - id: q04
+    question: Can a customer bring their pet dog on the train?
+    category: luggage
+    docs: [nrcot]
+    evidence: "two dogs"
+    facts: ["two|2"]
+    ref: Up to two dogs or small domestic animals free of charge; dogs on a lead (Condition 24.1, 24.4).
+
+  - id: q05
+    question: Are guide dogs and other assistance dogs allowed on our trains?
+    category: accessibility
+    docs: [atp, mra]
+    evidence: "Assistance dogs are welcome"
+    facts: ["welcome|allowed|yes"]
+    ref: Assistance dogs are welcome on all services; water available at staffed stations (ATP A.1).
+
+  - id: q06
+    question: What are the maximum dimensions for a wheelchair or mobility scooter we can take on board?
+    category: accessibility
+    docs: [atp, mra]
+    evidence: "700mm"
+    facts: ["700", "1,?200", "300"]
+    ref: Width 700 mm, length 1,200 mm, weight 300 kg including the user (ATP A.5).
+
+  - id: q07
+    question: Is there an accessible toilet on a Class 717 train?
+    category: fleet
+    docs: [fleet]
+    evidence: "Class 717"
+    facts: ["\\bno\\b"]
+    ref: No — Class 717 has no standard or accessible toilet (Fleet Accessibility Information).
+
+  - id: q08
+    question: Do Thameslink Class 700 trains have on-board staff?
+    category: fleet
+    docs: [fleet]
+    evidence: "Class 700"
+    facts: ["\\bno\\b"]
+    ref: No on-train staff on Class 700 (Fleet Accessibility Information).
+
+  - id: q09
+    question: A wheelchair user is boarding at St Pancras. Will they need a ramp?
+    category: accessibility
+    docs: [atp, mra]
+    evidence: "St Pancras"
+    facts: ["level boarding"]
+    ref: Level boarding areas are available at St Pancras and other central Thameslink stations (MRA; ATP A.5).
+
+  - id: q10
+    question: What should a passenger do at an unstaffed station if they need help?
+    category: accessibility
+    docs: [atp, mra]
+    evidence: "Help Point"
+    facts: ["help point", "0808 168 1238"]
+    ref: Use the Help Point ('emergency and assisted travel button') or freephone 0808 168 1238 / text 07970 511077.
+
+  - id: q11
+    question: What is the deadline for submitting a delay compensation claim?
+    category: refunds
+    docs: [nrcot]
+    evidence: "33\\.1"
+    facts: ["28 days"]
+    ref: Within 28 days of completing the journey (Condition 33.1).
+
+  - id: q12
+    question: Is there an admin fee when refunding an unused ticket?
+    category: refunds
+    docs: [nrcot]
+    evidence: "not exceed £5"
+    facts: ["£5"]
+    ref: Up to £5 per ticket (£10 for Season Tickets) (Condition 29).
+
+  - id: q13
+    question: How much does it cost to replace a damaged ticket?
+    category: ticketing
+    docs: [nrcot]
+    evidence: "not exceeding £10"
+    facts: ["£10"]
+    ref: A reasonable administrative charge not exceeding £10 (Condition 4.8).
+
+  - id: q14
+    question: The train was cancelled and the passenger decided not to travel. Can they get their money back?
+    category: refunds
+    docs: [nrcot]
+    evidence: "30\\.1"
+    facts: ["refund"]
+    ref: Yes, a refund without an administration charge (Condition 30.1).
+
+  - id: q15
+    question: What must we do if disruption stops a passenger from finishing their journey?
+    category: disruption
+    docs: [nrcot]
+    evidence: "28\\.2"
+    facts: ["alternative"]
+    ref: Provide alternative means of travel where reasonably possible, or overnight accommodation (Condition 28.2).
+
+  - id: q16
+    question: Can someone with a standard ticket sit in first class?
+    category: ticketing
+    docs: [nrcot]
+    evidence: "15\\.1|standard class Ticket"
+    facts: ["permission|not|cannot|upgrade"]
+    ref: Not without permission from staff or notices; a standard ticket can usually be upgraded (Condition 15).
+
+  - id: q17
+    question: When can a passenger be charged a Penalty Fare?
+    category: ticketing
+    docs: [nrcot]
+    evidence: "10\\.1"
+    facts: ["penalty fare"]
+    ref: At stations with a Penalty Fare scheme, e.g. no valid ticket, first class with standard ticket (Condition 10.1).
+
+  - id: q18
+    question: Are e-bikes and e-scooters allowed on trains?
+    category: luggage
+    docs: [nrcot]
+    evidence: "e-scooters"
+    facts: ["similar in size|cycle polic"]
+    ref: Yes if similar in size to a traditional cycle or scooter, unless the operator's cycle policy prohibits it (Condition 22.3).
+
+  - id: q19
+    question: If a station is not accessible for a disabled passenger, will we pay for a taxi?
+    category: accessibility
+    docs: [atp, mra, nrcot]
+    evidence: "free taxi|taxi to take you free of charge|no additional cost|accessible taxi"
+    facts: ["taxi"]
+    ref: Yes, a free (accessible if required) taxi to the nearest accessible station (ATP A.4).
+
+  - id: q20
+    question: What discount does the Disabled Persons Railcard give?
+    category: ticketing
+    docs: [atp, mra]
+    evidence: "1/3 off"
+    facts: ["1/3|third"]
+    ref: One third off for the holder and a companion (ATP A.3).
+
+  - id: q21
+    question: Booked assistance didn't turn up. Can the passenger claim anything?
+    category: accessibility
+    docs: [atp, mra]
+    evidence: "redress|Redress"
+    facts: ["redress|claim|compensat"]
+    ref: Yes, redress for failed assistance, separate from Delay Repay (ATP A.8).
+
+  - id: q22
+    question: How long might it take staff to help someone off the train at the final stop?
+    category: accessibility
+    docs: [mra, atp]
+    evidence: "five minutes"
+    facts: ["five|5"]
+    ref: Up to five minutes (Making Rail Accessible, At the station).
+
+  - id: q23
+    question: A passenger hasn't booked help and is at an unstaffed station. How early should they arrive?
+    category: accessibility
+    docs: [mra, atp]
+    evidence: "20 minutes"
+    facts: ["20"]
+    ref: At least 20 minutes before departure, then contact staff via a Help Point (MRA, At the station).
+
+  - id: q24
+    question: Can a mobility scooter go on a rail replacement bus?
+    category: disruption
+    docs: [atp, mra]
+    evidence: "rail replacement buses"
+    facts: ["unable|not|may not|can't|cannot"]
+    ref: Many rail replacement buses and coaches cannot accept mobility scooters (ATP A.5).
+
+  - id: q25
+    question: Is there somewhere at St Pancras where a passenger can leave luggage?
+    category: stations
+    docs: [atp]
+    evidence: "[Ll]eft luggage"
+    facts: ["left luggage|excess baggage"]
+    ref: GTR has no left luggage, but facilities exist at St Pancras International, King's Cross, Victoria and Gatwick (ATP A.7).
+
+  - id: q26
+    question: How fast is a mobility scooter allowed to go inside a station?
+    category: accessibility
+    docs: [atp]
+    evidence: "three miles per hour"
+    facts: ["three|3"]
+    ref: No more than three miles per hour (ATP A.5).
+
+  # ---- not in the documents: the right answer is "I can't find this"
+  - id: u01
+    question: What time is the last train from Brighton tonight?
+    category: out-of-scope
+    answerable: false
+  - id: u02
+    question: How much is an Anytime Return from Bedford to London?
+    category: out-of-scope
+    answerable: false
+  - id: u03
+    question: Is the lift at Farringdon working today?
+    category: out-of-scope
+    answerable: false
+  - id: u04
+    question: What is the Wi-Fi password on Class 700 trains?
+    category: out-of-scope
+    answerable: false
+  - id: u05
+    question: How do I reset a ticket gate that is jammed?
+    category: out-of-scope
+    answerable: false
+  - id: u06
+    question: How much Delay Repay does a passenger get for a 15-minute delay?
+    category: out-of-scope
+    answerable: false

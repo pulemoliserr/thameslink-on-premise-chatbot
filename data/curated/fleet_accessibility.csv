@@ -1,0 +1,7 @@
+brand,train_class,routes,dedicated_accessible_carriage_with_wheelchair_space,standard_toilet,accessible_toilet,aural_information,visual_information,priority_seats,accessible_signage_outside_train,scooter_mobility_aid_acceptance,boarding_ramp,on_train_staff,page
+Southern,377/387,Entire Southern network excluding Uckfield route and Ashford to Hastings (Marsh Link),Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes; see policy online,Yes,Check with staff,1
+Southern,171,London Bridge to Uckfield and Ashford to Eastbourne (Marsh Link) services,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes; see policy online,Yes,Yes,1
+Gatwick Express,387,All Gatwick Express and some Southern services,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes; see policy online,Yes,Check with staff,1
+Great Northern,387/379,"London King's Cross to Peterborough, Cambridge and Kings Lynn",Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes; see policy online,Yes,No,1
+Great Northern,717,All Moorgate services via Stevenage and Hertford North,Yes,No,No,Yes,Yes,Yes,Yes,Yes; see policy online,Yes,No,1
+Thameslink,700,All Thameslink services,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes; see policy online,Yes,No,1

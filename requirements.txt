@@ -1,0 +1,8 @@
+pdfplumber>=0.11
+rank-bm25>=0.2.2
+snowballstemmer>=2.2
+numpy>=1.26
+requests>=2.31
+PyYAML>=6.0
+streamlit>=1.40
+pytest>=8.0

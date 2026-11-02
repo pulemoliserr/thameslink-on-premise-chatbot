@@ -1,0 +1,47 @@
+# The document set the chatbot answers from.
+# To add a document: put the PDF in data/raw/, add an entry here, then run:
+#   python -m rag.ingest
+#
+# kind: pdf   -> text is extracted from the PDF and split into passages by heading
+# kind: table -> a hand-curated CSV (one passage per row), used where PDF text
+#                extraction scrambles a table layout
+
+documents:
+  - id: nrcot
+    kind: pdf
+    file: raw/National_Rail_Conditions_of_Travel_2025.pdf
+    title: National Rail Conditions of Travel
+    short: Conditions of Travel
+    version: Version 6, applies from 23 November 2025
+    credit: "© Rail Settlement Plan Ltd 2025"
+    section_style: condition      # numbered headings are cited as "Condition 30.2"
+    skip_pages: [1, 2]            # cover and contents page
+
+  - id: atp
+    kind: pdf
+    file: raw/Accessible_Travel_Policy.pdf
+    title: Accessible Travel Policy
+    short: Accessible Travel Policy
+    version: Valid from April 2026
+    credit: Govia Thameslink Railway (GTR)
+    section_style: heading
+    skip_pages: [1, 2]
+
+  - id: mra
+    kind: pdf
+    file: raw/Making_Rail_Accessible.pdf
+    title: Making Rail Accessible – Helping older and disabled passengers
+    short: Making Rail Accessible
+    version: Valid from April 2026
+    credit: Govia Thameslink Railway (GTR)
+    section_style: heading
+    skip_pages: [1, 2]
+
+  - id: fleet
+    kind: table
+    file: curated/fleet_accessibility.csv
+    source_pdf: raw/Fleet_accessibility_information.pdf
+    title: Fleet Accessibility Information
+    short: Fleet Accessibility
+    version: April 2026
+    credit: Govia Thameslink Railway (GTR)
