@@ -9,7 +9,8 @@ Accounts live in data/users.json on the server. Create them from the command lin
 
     python -m rag.auth create-admin itlead
     python -m rag.auth add jsmith --role revenue --name "Jo Smith"
-    python -m rag.auth demo            # one account per role, random passwords printed once
+    python -m rag.auth demo            # one account per role; passwords shown on the sign-in page
+    python -m rag.auth demo --reset    # new passwords for the existing demo accounts
     python -m rag.auth list
 
 For production, the README describes connecting to Thameslink's single sign-on instead.
@@ -35,6 +36,9 @@ from . import config
 
 USERS_FILE = config.STATE_DIR / "users.json"
 AUDIT_FILE = config.STATE_DIR / "audit.jsonl"
+# Plain-text passwords of the DEMO accounts only, so the sign-in page can list them for testers.
+# Never committed (see .gitignore). Delete this file, or set DEMO_LOGINS=0, to hide the list.
+DEMO_FILE = config.STATE_DIR / "demo_credentials.json"
 
 MAX_FAILS = 5
 LOCK_SECONDS = 15 * 60
@@ -193,6 +197,8 @@ def authenticate(username: str, password: str) -> User:
 
 
 def change_password(username: str, old: str, new: str) -> None:
+    if is_demo(username):
+        raise AuthError("Demo accounts are shared, so their password can't be changed here.")
     with _lock:
         users = load_users()
         user = users[username]
@@ -243,6 +249,7 @@ def reset_password(username: str, by: str = "") -> str:
         user.salt, user.pw_hash = hash_password(password)
         user.must_change, user.fails, user.locked_until = True, 0, 0.0
         save_users(users)
+    forget_demo(username)
     audit("password_reset", username, by=by)
     return password
 
@@ -276,6 +283,86 @@ def get_user(username: str) -> User | None:
     return load_users().get(username)
 
 
+# ---------------------------------------------------------------- demo accounts
+def demo_logins() -> list[dict]:
+    """Demo accounts to list on the sign-in page: [{username, password, role, name}], active ones only."""
+    if os.getenv("DEMO_LOGINS", "1").strip().lower() in ("0", "false", "no", "off") or not DEMO_FILE.exists():
+        return []
+    try:
+        saved = json.loads(DEMO_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    users = load_users()
+    out = []
+    for username, password in saved.items():
+        u = users.get(username)
+        if u and u.active:
+            out.append({"username": username, "password": password, "role": u.role, "name": ROLES[u.role]["name"]})
+    order = list(ROLES)
+    return sorted(out, key=lambda d: order.index(d["role"]) if d["role"] in order else 99)
+
+
+def _save_demo(saved: dict[str, str]) -> None:
+    DEMO_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not saved:
+        DEMO_FILE.unlink(missing_ok=True)
+        return
+    tmp = DEMO_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(saved, indent=1), encoding="utf-8")
+    os.replace(tmp, DEMO_FILE)
+    try:
+        os.chmod(DEMO_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def _load_demo() -> dict[str, str]:
+    try:
+        return json.loads(DEMO_FILE.read_text(encoding="utf-8")) if DEMO_FILE.exists() else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def is_demo(username: str) -> bool:
+    return username in _load_demo()
+
+
+def forget_demo(username: str) -> None:
+    """Stop listing an account on the sign-in page (its password is no longer the published one)."""
+    with _lock:
+        saved = _load_demo()
+        if saved.pop(username, None) is not None:
+            _save_demo(saved)
+
+
+def create_demo_accounts(reset: bool = False) -> list[tuple[str, str, str]]:
+    """One demo account per role. Returns (username, password or '', status) per role."""
+    results = []
+    with _lock:
+        saved = _load_demo()
+        for role, info in ROLES.items():
+            username = f"demo.{role}"
+            if username in load_users():
+                if not reset:
+                    results.append((username, saved.get(username, ""), "exists"))
+                    continue
+                pw = generate_password()
+                users = load_users()
+                u = users[username]
+                u.salt, u.pw_hash = hash_password(pw)
+                u.must_change, u.fails, u.locked_until, u.active = False, 0, 0.0, True
+                save_users(users)
+                audit("password_reset", username, by="cli", detail="demo")
+                status = "new password"
+            else:
+                pw = create_user(username, f"Demo {info['name']}", role, by="cli", must_change=False)
+                status = "created"
+            saved[username] = pw
+            results.append((username, pw, status))
+        _save_demo(saved)
+    return results
+
+
 # ---------------------------------------------------------------- command line
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m rag.auth", description="Manage Frontline Assistant accounts.")
@@ -290,7 +377,8 @@ def main(argv=None):
     p = sub.add_parser("reset", help="give a user a new temporary password")
     p.add_argument("username")
     sub.add_parser("list", help="list accounts")
-    sub.add_parser("demo", help="create one demo account per role (random passwords, printed once)")
+    p = sub.add_parser("demo", help="create one demo account per role (passwords listed on the sign-in page)")
+    p.add_argument("--reset", action="store_true", help="give the existing demo accounts new passwords")
     args = ap.parse_args(argv)
 
     try:
@@ -311,15 +399,12 @@ def main(argv=None):
                 print(f"{u.username:<16} {ROLES[u.role]['name']:<20} {'active' if u.active else 'DISABLED':<9}"
                       f" last sign-in: {u.last_login or '—'}")
         elif args.cmd == "demo":
-            print("Demo accounts (passwords are shown only now — note them down):\n")
-            for role, info in ROLES.items():
-                username = f"demo.{role}"
-                if username in load_users():
-                    print(f"  {username:<16} already exists (use 'reset' for a new password)")
-                    continue
-                pw = create_user(username, f"Demo {info['name']}", role, by="cli", must_change=False)
-                print(f"  {username:<16} {pw}   {info['name']}")
-            print("\nDelete or disable demo accounts before real use.")
+            print("Demo accounts:\n")
+            for username, pw, status in create_demo_accounts(reset=args.reset):
+                shown = pw or "(password not saved: run with --reset)"
+                print(f"  {username:<16} {shown:<16} {status}")
+            print(f"\nThe sign-in page lists these accounts (saved in {DEMO_FILE}).\n"
+                  "Hide the list with DEMO_LOGINS=0 or by deleting that file. Remove demo accounts before real use.")
     except (AuthError, KeyError) as e:
         sys.exit(f"Error: {e}")
 

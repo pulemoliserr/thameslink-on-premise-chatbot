@@ -74,6 +74,27 @@ def sign_out(reason: str = ""):
         st.session_state["signout_reason"] = reason
 
 
+def demo_accounts_box():
+    """Dropdown of the demo accounts with copyable username and password (only if demo accounts exist)."""
+    demos = auth.demo_logins()
+    if not demos:
+        return
+    with st.expander("🔑 Demo accounts: pick one to copy the sign-in details"):
+        labels = {f"{d['name']}  ·  {d['username']}": d for d in demos}
+        pick = labels[st.selectbox("User group", list(labels), key="demo_pick")]
+        st.caption("Username")
+        st.code(pick["username"], language=None)
+        st.caption("Password")
+        st.code(pick["password"], language=None)
+        st.caption(f"Opens: {', '.join(BY_ID[u].short for u in auth.ROLES[pick['role']]['use_cases'])}"
+                   + (" and the administration area" if auth.ROLES[pick['role']].get('admin') else ""))
+        if st.button("Fill in the sign-in form", use_container_width=True):
+            st.session_state["login_username"] = pick["username"]
+            st.session_state["login_password"] = pick["password"]
+            st.rerun()
+        st.caption("Copy with the icon at the right of each box. Demo data only.")
+
+
 def login_page():
     _, mid, _ = st.columns([1, 1.3, 1])
     with mid:
@@ -85,9 +106,11 @@ def login_page():
         if not auth.load_users():
             st.warning("No accounts exist yet. IT creates the first administrator on the server with:  \n"
                        "`python -m rag.auth create-admin <username>`")
+        demo_accounts_box()
         with st.form("login"):
-            username = st.text_input("Username", autocomplete="username")
-            password = st.text_input("Password", type="password", autocomplete="current-password")
+            username = st.text_input("Username", autocomplete="username", key="login_username")
+            password = st.text_input("Password", type="password", autocomplete="current-password",
+                                     key="login_password")
             if st.form_submit_button("Sign in", type="primary", use_container_width=True):
                 try:
                     user = auth.authenticate(username, password)
