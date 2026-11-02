@@ -15,3 +15,4 @@ data/caselog.jsonl
 data/demo_credentials.json
 *.tmp
 state/
+.streamlit/secrets.toml
