@@ -6,6 +6,7 @@ Accounts:  python -m rag.auth --help
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -23,6 +24,18 @@ from rag.retrieve import Retriever
 from rag.usecases import BY_ID, USE_CASES
 
 st.set_page_config(page_title="Frontline Assistant", page_icon="🚆", layout="wide")
+
+
+def demo_mode() -> bool:
+    """DEMO_MODE from Streamlit secrets (Community Cloud) or the environment, read on every page load."""
+    value = ""
+    try:
+        value = str(st.secrets.get("DEMO_MODE", ""))
+    except Exception:                       # no secrets file: that's fine
+        pass
+    value = value or os.getenv("DEMO_MODE", "")
+    config.DEMO_MODE = value.strip().lower() in ("1", "true", "yes", "on")
+    return config.DEMO_MODE
 
 ICON = {"ok": "✅", "warn": "⚠️", "stop": "⛔", "info": "ℹ️"}
 
@@ -49,10 +62,9 @@ def prepare_index() -> str:
         return f"Could not prepare the documents ({e}). See the README, \"Get the documents\"."
 
 
-@st.cache_resource
 def prepare_demo() -> None:
     """Public demo: create the demo accounts on first start (they then appear on the sign-in page)."""
-    if config.DEMO_MODE and not auth.load_users():
+    if demo_mode() and not auth.load_users():
         auth.create_demo_accounts()
 
 
@@ -133,12 +145,13 @@ def login_page():
     _, mid, _ = st.columns([1, 1.3, 1])
     with mid:
         st.markdown("## 🚆 Frontline Assistant")
-        st.caption("Staff sign-in · prototype for Thameslink / Govia Thameslink Railway")
+        st.caption("Staff sign-in · independent student prototype using public rail documents (not affiliated with Thameslink / GTR)")
         reason = st.session_state.pop("signout_reason", "")
         if reason == "idle":
             st.info("You were signed out after 30 minutes without activity.")
         if not auth.load_users():
-            st.warning("No accounts exist yet. IT creates the first administrator on the server with:  \n"
+            st.warning("No accounts exist yet. For a public demo, add the secret `DEMO_MODE = \"1\"` and reboot the app. "
+                       "Otherwise IT creates the first administrator on the server with:  \n"
                        "`python -m rag.auth create-admin <username>`")
         demo_accounts_box()
         with st.form("login"):
