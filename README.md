@@ -5,6 +5,8 @@ A local, open-source assistant for Thameslink / GTR staff with **five use cases*
 - a **RAG chat** (retrieval-augmented generation) that searches only that use case's documents and answers **only from them, citing the document, section and page**, and
 - for use cases 2–5, a **rule-based advisor**: staff describe the situation in a form and get the applicable rules, each linked to the exact wording of its Condition or section.
 
+Staff **sign in**, and each user group lands in its own area and sees only the assistants for its role. An administrator manages accounts.
+
 Everything runs on your own machine: no cloud AI service and no data leaving the computer, which matches the customer's on-premise requirement.
 
 ![Screenshot](docs/screenshot.png)
@@ -24,6 +26,55 @@ Choose the assistant in the sidebar.
 **How the advisors stay correct.** Every rule in `rag/advisors.py` quotes the exact phrase from the document it relies on (85 quotes). When the app starts, and in the tests, each quote is looked up in the indexed documents. If a document is updated and a rule no longer matches, the sidebar shows a warning instead of the app silently giving outdated advice. The advisors work without any language model.
 
 **Similar past cases (use case 2).** Staff can save resolved cases (situation, decision, Conditions). New cases are matched against saved ones with the same keyword search. It starts with five **fictional** example cases (`data/caselog_examples.jsonl`), always labelled "Example" in the app; real cases are stored in `data/caselog.jsonl` on the server. Do not store passenger names.
+
+## Sign-in and user groups
+
+| Role | User group | Lands on | Can also open |
+| --- | --- | --- | --- |
+| Frontline staff | Frontline employee / customer service agent | 1 Policy & manuals | — |
+| Revenue protection | Service desk agent / revenue protection officer | 2 Ticket inspection | 1 |
+| Assisted travel | Resource planner / assisted travel coordinator | 3 Passenger Assist | 1 |
+| Customer relations | Customer relations agent | 4 Refunds & compensation | 1 |
+| Station management | Station manager / dispatch operator | 5 Fleet accessibility | 1 |
+| Administrator | IT / data protection lead | Administration | all five |
+
+Everyone can also use the general policy assistant (1), since all staff need it. Change the mapping in `ROLES` in `rag/auth.py`.
+
+**Managing accounts.** Create the first administrator on the server, then manage everyone else in the app (Administration → Users: add, change role, disable, reset password):
+
+```bash
+python -m rag.auth create-admin itlead           # asks for a password
+python -m rag.auth add jsmith --role revenue --name "Jo Smith"   # prints a temporary password
+python -m rag.auth list
+```
+
+**Security measures in this prototype**
+- Passwords are stored only as salted **scrypt** hashes; new and reset accounts get a random temporary password that must be changed at first sign-in. Minimum 10 characters, letters plus a number or symbol, not containing the username.
+- **Lockout** for 15 minutes after 5 failed attempts; failed sign-ins don't reveal whether a username exists.
+- **Access is checked on the server** for every page, not only hidden in the menu; disabling an account or changing its role takes effect at the user's next click.
+- Automatic **sign-out after 30 minutes** without activity.
+- **Audit log** of sign-ins, sign-outs and account changes (no passwords), visible to administrators.
+- Accounts, audit log, feedback and saved cases are written to the **state folder** (`RAG_STATE_DIR`, default `data/`), separate from the documents. Back it up and keep it out of Git.
+
+**Not production-ready yet (say so in the report):**
+- For real use, connect to Thameslink's **single sign-on** (e.g. Microsoft Entra ID) instead of local accounts. Streamlit has built-in OpenID Connect sign-in (`st.login`) that can replace the local login page, while the role mapping stays the same.
+- Serve the app over **HTTPS** behind a reverse proxy (e.g. nginx or IIS) on the intranet. Streamlit itself serves plain HTTP.
+- Reloading the browser tab signs the user out: the sign-in lives in the browser session.
+- Local accounts suit a pilot with a handful of users, not hundreds.
+
+## Run as a web app on a server
+
+`Dockerfile` and `docker-compose.yml` run the app and Ollama together on one on-premise server:
+
+```bash
+docker compose up -d --build
+docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec app python -m rag.ingest --embed
+docker compose exec app python -m rag.auth create-admin itlead
+```
+
+The app listens on `127.0.0.1:8501` on the server; publish it to staff through an HTTPS reverse proxy. Accounts and logs persist in `./state`. **These Docker files were written but not built in the environment where this prototype was made** (Docker Hub was not reachable there), so do a test build before relying on them. Without Docker, the Quick start commands work on any server with Python 3.10+, plus Ollama installed separately.
 
 ## Documents
 
@@ -47,7 +98,8 @@ python -m venv .venv
 pip install -r requirements.txt
 
 python -m rag.ingest          # read the PDFs and build the search index (~15 s)
-streamlit run app.py          # opens http://localhost:8501
+python -m rag.auth demo       # one demo account per user group; passwords are printed once
+streamlit run app.py          # opens http://localhost:8501 — sign in with a demo account
 ```
 
 Without a language model the app runs in **"quote documents only"** mode: it finds the right passages and shows the most relevant sentences with citations. This is also the search-only baseline for the evaluation.
@@ -108,9 +160,10 @@ You can also use the terminal: `python -m rag.cli "Can a passenger take a bicycl
 | Use cases | `rag/usecases.py` | Users, problem, user story, **search scope** (which documents/sections each assistant may use) and the assistant's role in the prompt. |
 | Advisors | `rag/advisors.py` | Rule-based checks for use cases 2–5; every rule cites an exact quote, verified against the documents. |
 | Case log | `rag/caselog.py` | Saving and finding similar past cases (use case 2). |
-| Interface | `app.py` | Streamlit app: one page per use case with the advisor, chat with sources, and 👍/👎 feedback (saved to `data/feedback.jsonl`). |
+| Sign-in | `rag/auth.py` | Accounts, roles, password hashing, lockout, audit log; command line for account management. |
+| Interface | `app.py` | Streamlit web app: sign-in, one area per role, the advisors, chat with sources, 👍/👎 feedback, and the Administration area (users, activity, feedback, saved cases, system status). |
 | Evaluation | `eval/` | 32 test questions with expected sources and answer facts; computes the metrics below. |
-| Tests | `tests/` | 33 automated tests (`python -m pytest -q`): ingestion, search, every advisor rule and its citation, each use case's scope and example questions, the case log, and a **fake Ollama server** (`tests/mock_ollama.py`) that exercises the full LLM path without downloading a model. |
+| Tests | `tests/` | 41 automated tests (`python -m pytest -q`): ingestion, search, every advisor rule and its citation, each use case's scope and example questions, the case log, sign-in (hashing, lockout, roles, audit log), and a **fake Ollama server** (`tests/mock_ollama.py`) that exercises the full LLM path without downloading a model. |
 
 To add a document: put the PDF in `data/raw/`, add an entry to `data/documents.yaml`, run `python -m rag.ingest` (add `--embed` if using Ollama).
 
@@ -153,13 +206,12 @@ The report goes to `eval/results/report.md`. `eval/questions.yaml` has **26 answ
 | Data preparation | Heading-aware chunking, page/section metadata, hand-curated fleet table, removal of decorative text. |
 | Modeling | BM25 baseline → hybrid search → local LLM generation. Compare chat models (e.g. `llama3.1:8b` vs `llama3.2:3b` vs `qwen2.5:7b`). |
 | Evaluation | `eval/evaluate.py`: retrieval Hit@k/MRR, answer correctness, citation accuracy, refusal behaviour. |
-| Deployment (concept) | On-premise server with Ollama; access via browser; feedback loop via 👍/👎 for review by a content owner. |
+| Deployment (concept) | On-premise server (Docker: app + Ollama) behind an HTTPS proxy; sign-in by role, later via Thameslink's single sign-on; 👍/👎 feedback and saved cases reviewed by an administrator. |
 
 ## Known limitations
 
 - **Prototype, not for operational use.** Staff must verify answers against the cited document.
 - Answers can only be as current as the PDFs; there is no automatic update when Thameslink publishes a new version.
-- No login or access control; all documents are visible to all users.
 - Station-specific facts (lifts, staffing hours at a given station) are mostly **not** in these documents; the assistant should refuse rather than guess.
 - Page numbers are PDF page numbers, which may differ by one or two from the printed numbers in the documents.
 - **Use case 3** checks a request against the policy, but does not match requests to available staff ("find suitable candidates"): that needs rostering data we do not have.

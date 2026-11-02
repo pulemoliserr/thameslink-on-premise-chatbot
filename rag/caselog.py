@@ -18,7 +18,7 @@ from rank_bm25 import BM25Okapi
 from . import config
 from .retrieve import tokenize
 
-LOG = config.DATA_DIR / "caselog.jsonl"
+LOG = config.STATE_DIR / "caselog.jsonl"
 EXAMPLES = config.DATA_DIR / "caselog_examples.jsonl"
 
 
@@ -30,8 +30,8 @@ def load_cases(include_examples: bool = True) -> list[dict]:
     return cases
 
 
-def add_case(situation: str, decision: str, conditions: str, category: str = "") -> dict:
-    case = {"time": datetime.now(timezone.utc).isoformat(timespec="seconds"), "category": category,
+def add_case(situation: str, decision: str, conditions: str, category: str = "", author: str = "") -> dict:
+    case = {"time": datetime.now(timezone.utc).isoformat(timespec="seconds"), "category": category, "author": author,
             "situation": situation.strip(), "decision": decision.strip(), "conditions": conditions.strip(),
             "example": False}
     with open(LOG, "a", encoding="utf-8") as fh:

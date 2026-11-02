@@ -1,6 +1,7 @@
-"""Thameslink Frontline Assistant — five use cases in one app.
+"""Thameslink Frontline Assistant — five use cases, one area per user group.
 
 Run:  streamlit run app.py
+Accounts:  python -m rag.auth --help
 """
 from __future__ import annotations
 
@@ -14,12 +15,12 @@ import pandas as pd
 import streamlit as st
 import yaml
 
-from rag import advisors, caselog, config, ollama_client
+from rag import advisors, auth, caselog, config, ollama_client
 from rag.advisors import (CLAIM_EVENTS, FLEET_FIELDS, NO_TICKET_REASONS, R, TICKET_SITUATIONS, TICKET_TYPES,
                           Finding)
 from rag.answer import answer
 from rag.retrieve import Retriever
-from rag.usecases import USE_CASES
+from rag.usecases import BY_ID, USE_CASES
 
 st.set_page_config(page_title="Frontline Assistant", page_icon="🚆", layout="wide")
 
@@ -49,7 +50,8 @@ def citation_problems() -> list[str]:
 
 
 def log_feedback(entry: dict):
-    with open(config.DATA_DIR / "feedback.jsonl", "a", encoding="utf-8") as f:
+    entry["user"] = st.session_state.get("user", "")
+    with open(config.STATE_DIR / "feedback.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
@@ -62,13 +64,92 @@ except FileNotFoundError as e:
 models = ollama_status()
 llm_ready = ollama_client.has_model(config.CHAT_MODEL, models or [])
 
+
+# ------------------------------------------------------------------ sign-in
+def sign_out(reason: str = ""):
+    if st.session_state.get("user"):
+        auth.audit("logout", st.session_state["user"], detail=reason)
+    st.session_state.clear()
+    if reason:
+        st.session_state["signout_reason"] = reason
+
+
+def login_page():
+    _, mid, _ = st.columns([1, 1.3, 1])
+    with mid:
+        st.markdown("## 🚆 Frontline Assistant")
+        st.caption("Staff sign-in · prototype for Thameslink / Govia Thameslink Railway")
+        reason = st.session_state.pop("signout_reason", "")
+        if reason == "idle":
+            st.info("You were signed out after 30 minutes without activity.")
+        if not auth.load_users():
+            st.warning("No accounts exist yet. IT creates the first administrator on the server with:  \n"
+                       "`python -m rag.auth create-admin <username>`")
+        with st.form("login"):
+            username = st.text_input("Username", autocomplete="username")
+            password = st.text_input("Password", type="password", autocomplete="current-password")
+            if st.form_submit_button("Sign in", type="primary", use_container_width=True):
+                try:
+                    user = auth.authenticate(username, password)
+                    st.session_state["user"] = user.username
+                    st.session_state["last_active"] = time.time()
+                    st.rerun()
+                except auth.AuthError as e:
+                    st.error(str(e))
+        st.caption("Each user group signs in to its own area. Forgotten password: ask your administrator.")
+
+
+def change_password_page(user: auth.User):
+    _, mid, _ = st.columns([1, 1.3, 1])
+    with mid:
+        st.markdown(f"## Welcome, {user.name}")
+        st.info("Please choose your own password before you continue.")
+        with st.form("pw"):
+            old = st.text_input("Temporary password", type="password", autocomplete="current-password")
+            new = st.text_input(f"New password (at least {auth.MIN_PASSWORD_LEN} characters, letters and a number or symbol)",
+                                type="password", autocomplete="new-password")
+            new2 = st.text_input("Repeat the new password", type="password", autocomplete="new-password")
+            if st.form_submit_button("Save password", type="primary", use_container_width=True):
+                if new != new2:
+                    st.error("The new passwords do not match.")
+                else:
+                    try:
+                        auth.change_password(user.username, old, new)
+                        st.rerun()
+                    except auth.AuthError as e:
+                        st.error(str(e))
+        if st.button("Sign out"):
+            sign_out()
+            st.rerun()
+
+
+if "user" not in st.session_state:
+    login_page()
+    st.stop()
+if time.time() - st.session_state.get("last_active", 0) > auth.SESSION_IDLE_SECONDS:
+    sign_out("idle")
+    st.rerun()
+st.session_state["last_active"] = time.time()
+user = auth.get_user(st.session_state["user"])
+if user is None or not user.active:          # account removed or disabled while signed in
+    sign_out("disabled")
+    st.rerun()
+if user.must_change:
+    change_password_page(user)
+    st.stop()
+
 # ------------------------------------------------------------------ sidebar
 with st.sidebar:
     st.markdown("### 🚆 Frontline Assistant")
-    choice = st.radio("Assistant", [u.id for u in USE_CASES],
-                      format_func=lambda i: next(f"{u.icon} {u.number}. {u.short}" for u in USE_CASES if u.id == i),
-                      label_visibility="collapsed")
-    uc = next(u for u in USE_CASES if u.id == choice)
+    st.markdown(f"**{user.name}**  \n{auth.ROLES[user.role]['name']}")
+    areas = (["admin"] if user.is_admin else []) + list(user.use_cases)     # first entry = landing page
+    choice = st.radio("Your areas", areas, label_visibility="collapsed",
+                      format_func=lambda i: "⚙️ Administration" if i == "admin"
+                      else f"{BY_ID[i].icon} {BY_ID[i].number}. {BY_ID[i].short}")
+    uc = BY_ID.get(choice)
+    if st.button("Sign out", use_container_width=True):
+        sign_out()
+        st.rerun()
 
     st.divider()
     st.caption("STATUS")
@@ -235,7 +316,7 @@ def page_tickets(u):
             d = st.text_area("Decision taken")
             cond = st.text_input("Conditions applied", placeholder="e.g. 6.1.1, 9.4")
             if st.form_submit_button("Save case") and s and d:
-                caselog.add_case(s, d, cond)
+                caselog.add_case(s, d, cond, author=user.username)
                 st.success("Case saved on this server.")
         n_real = len(caselog.load_cases(include_examples=False))
         st.caption(f"{n_real} saved case(s) + {len(caselog.load_cases()) - n_real} fictional examples · "
@@ -309,7 +390,7 @@ def page_claims(u):
              "✅ on this machine" if local else f"⚠️ on server `{host}` — check it is inside Thameslink’s network"),
             ("Documents and search index", f"`{config.INDEX_DIR}`", "✅ local files"),
             ("Claim checker inputs", "kept in the browser session only", "✅ not stored"),
-            ("Feedback and saved cases", f"`{config.DATA_DIR}`", "✅ local files"),
+            ("Accounts, audit log, feedback, saved cases", f"`{config.STATE_DIR}`", "✅ local files"),
             ("Cloud AI services", "none used", "✅ no data leaves the server"),
             ("Streamlit usage statistics", "switched off in `.streamlit/config.toml`", "✅"),
         ]
@@ -369,8 +450,94 @@ def page_fleet(u):
         render_chat(u, "Ask about a train class or on-board accessibility…")
 
 
+def page_admin():
+    st.markdown("## ⚙️ Administration")
+    st.caption("Accounts, activity and quality review. Visible to administrators only.")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Users", "📜 Activity", "👎 Feedback", "🗂️ Saved cases", "🛠️ System"])
+    with tab1:
+        users = auth.load_users()
+        st.dataframe(pd.DataFrame([{
+            "Username": u.username, "Name": u.name, "Role": auth.ROLES[u.role]["name"],
+            "Areas": ", ".join(BY_ID[i].short for i in u.use_cases),
+            "Status": "active" if u.active else "disabled", "Must change password": u.must_change,
+            "Last sign-in": u.last_login or "—"} for u in users.values()]), use_container_width=True, hide_index=True)
+        c1, c2 = st.columns(2)
+        with c1, st.form("add_user", clear_on_submit=True):
+            st.markdown("**Add a user**")
+            new_u = st.text_input("Username", placeholder="e.g. jsmith")
+            new_n = st.text_input("Full name")
+            new_r = st.selectbox("Role", list(auth.ROLES), format_func=lambda r: f"{auth.ROLES[r]['name']} — {auth.ROLES[r]['group']}")
+            if st.form_submit_button("Create account"):
+                try:
+                    pw = auth.create_user(new_u, new_n, new_r, by=user.username)
+                    st.success(f"Account **{new_u.strip().lower()}** created. Temporary password (shown once):")
+                    st.code(pw)
+                except auth.AuthError as e:
+                    st.error(str(e))
+        with c2:
+            st.markdown("**Manage a user**")
+            target = st.selectbox("User", list(users), key="adm_target")
+            if target:
+                t = users[target]
+                role = st.selectbox("Role", list(auth.ROLES), index=list(auth.ROLES).index(t.role),
+                                    format_func=lambda r: auth.ROLES[r]["name"], key=f"adm_role_{target}")
+                b1, b2, b3 = st.columns(3)
+                try:
+                    if b1.button("Save role", key="adm_save", disabled=role == t.role):
+                        auth.update_user(target, by=user.username, role=role)
+                        st.rerun()
+                    if b2.button("Disable" if t.active else "Enable", key="adm_toggle",
+                                 disabled=target == user.username):
+                        auth.update_user(target, by=user.username, active=not t.active)
+                        st.rerun()
+                    if b3.button("Reset password", key="adm_reset"):
+                        st.success(f"New temporary password for **{target}** (shown once):")
+                        st.code(auth.reset_password(target, by=user.username))
+                except auth.AuthError as e:
+                    st.error(str(e))
+    with tab2:
+        log = auth.read_audit(300)
+        st.dataframe(pd.DataFrame(log) if log else pd.DataFrame(columns=["time", "event", "user", "by", "detail"]),
+                     use_container_width=True, hide_index=True)
+        st.caption(f"Latest 300 events from {auth.AUDIT_FILE.name}. Passwords are never logged.")
+    with tab3:
+        path = config.STATE_DIR / "feedback.jsonl"
+        fb = [json.loads(l) for l in open(path, encoding="utf-8")] if path.exists() else []
+        down = [f for f in fb if f.get("rating") == "down"]
+        st.metric("Answers rated 👎", f"{len(down)} of {len(fb)}")
+        if down:
+            st.dataframe(pd.DataFrame(down)[["time", "user", "use_case", "question", "answer"]],
+                         use_container_width=True, hide_index=True)
+        st.caption("Review 👎 answers regularly: fix the documents, the rules or the test questions.")
+    with tab4:
+        cases = caselog.load_cases(include_examples=False)
+        if cases:
+            st.dataframe(pd.DataFrame(cases), use_container_width=True, hide_index=True)
+        else:
+            st.info("No cases saved yet.")
+    with tab5:
+        st.markdown(f"- Advisor rules verified against the documents: **{len(advisors.ALL_CITES) - len(problems)} of "
+                    f"{len(advisors.ALL_CITES)}**")
+        for p in problems:
+            st.error(p)
+        st.markdown(f"- Language model: **{'connected' if llm_ready else 'not available'}** (`{config.CHAT_MODEL}` at "
+                    f"`{config.OLLAMA_URL}`)")
+        st.markdown(f"- Search index: **{len(retriever.chunks)} passages**"
+                    f"{', with semantic embeddings' if retriever.has_embeddings else ', keyword search only'}")
+        st.markdown(f"- Accounts file: `{auth.USERS_FILE}` · audit log: `{auth.AUDIT_FILE}`")
+
+
 PAGES = {"policy": page_policy, "tickets": page_tickets, "assist": page_assist, "claims": page_claims, "fleet": page_fleet}
-header(uc)
-PAGES[uc.id](uc)
+if choice == "admin":
+    if not user.is_admin:                                   # enforced on the server, not only hidden in the menu
+        st.error("You do not have access to this area.")
+        st.stop()
+    page_admin()
+else:
+    if uc is None or uc.id not in user.use_cases:
+        st.error("You do not have access to this area.")
+        st.stop()
+    header(uc)
+    PAGES[uc.id](uc)
 st.caption("Prototype · answers and checks come only from the published documents. "
            "Always check the cited source before acting.")

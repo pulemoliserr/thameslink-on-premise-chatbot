@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+data/index/embeddings.npy
+data/index/embeddings.json
+data/feedback.jsonl
+eval/results/
+# The PDFs are third-party documents: keep them out of any PUBLIC repository.
+# data/raw/*.pdf
+data/users.json
+data/audit.jsonl
+data/caselog.jsonl
+state/
