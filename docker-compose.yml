@@ -1,0 +1,30 @@
+# Runs the Frontline Assistant and Ollama on one on-premise server.
+#   docker compose up -d --build
+# Then see README, "Run as a web app on a server", for downloading models and creating the first administrator.
+services:
+  ollama:
+    image: ollama/ollama:latest        # pin a specific version for production
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    # GPU (NVIDIA): uncomment, and install the NVIDIA Container Toolkit on the server
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on: [ollama]
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      RAG_STATE_DIR: /app/state
+      CHAT_MODEL: llama3.1:8b
+    volumes:
+      - ./state:/app/state             # accounts, audit log, feedback, saved cases: back this folder up
+    ports:
+      - "127.0.0.1:8501:8501"          # only reachable from the server itself; publish via an HTTPS reverse proxy
+
+volumes:
+  ollama-models:

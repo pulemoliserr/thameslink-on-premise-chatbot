@@ -6,6 +6,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("RAG_DATA_DIR", ROOT / "data"))
 INDEX_DIR = Path(os.getenv("RAG_INDEX_DIR", DATA_DIR / "index"))
 DOCUMENTS_FILE = DATA_DIR / "documents.yaml"
+# Data the app writes (accounts, audit log, feedback, saved cases). Keep it on a persistent volume and back it up.
+STATE_DIR = Path(os.getenv("RAG_STATE_DIR", DATA_DIR))
+STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Ollama runs the language models locally (https://ollama.com). Nothing leaves the machine.
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
