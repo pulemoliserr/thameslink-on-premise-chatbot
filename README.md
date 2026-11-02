@@ -62,6 +62,18 @@ python -m rag.auth list
 - Reloading the browser tab signs the user out: the sign-in lives in the browser session.
 - Local accounts suit a pilot with a handful of users, not hundreds.
 
+## Public demo on Streamlit Community Cloud
+
+1. Sign in at <https://share.streamlit.io> with GitHub and click **Create app** → **Deploy a public app from GitHub**.
+2. Repository: this repo · Branch: `main` · Main file path: `app.py` · choose an App URL.
+3. **Advanced settings**: Python 3.12, and under **Secrets** paste:
+   ```toml
+   DEMO_MODE = "1"
+   ```
+4. **Deploy**. On first start the app downloads the documents (if they are not in the repo), builds the search index and creates one demo account per user group, listed on the sign-in page.
+
+On Community Cloud there is no local language model, so the chat runs in "quote documents only" mode; the advisors work fully. The server's storage is temporary: accounts and saved cases are reset when the app restarts, and the demo accounts then get new passwords. In demo mode, visitors can't reset or disable the demo accounts.
+
 ## Run as a web app on a server
 
 `Dockerfile` and `docker-compose.yml` run the app and Ollama together on one on-premise server:

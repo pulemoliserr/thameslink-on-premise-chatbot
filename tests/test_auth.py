@@ -128,3 +128,14 @@ def test_demo_password_cannot_be_changed_and_reset_or_disable_unlists():
     auth.update_user("demo.assist", by="demo.admin", active=False)
     names = {d["username"] for d in auth.demo_logins()}
     assert "demo.revenue" not in names and "demo.assist" not in names and "demo.claims" in names
+
+
+def test_public_demo_accounts_cannot_be_reset_or_disabled(monkeypatch):
+    from rag import config
+    monkeypatch.setattr(config, "DEMO_MODE", True)
+    auth.create_demo_accounts()
+    with pytest.raises(auth.AuthError, match="shared demo account"):
+        auth.reset_password("demo.claims", by="demo.admin")
+    with pytest.raises(auth.AuthError, match="shared demo account"):
+        auth.update_user("demo.frontline", by="demo.admin", active=False)
+    assert len(auth.demo_logins()) == len(auth.ROLES)
