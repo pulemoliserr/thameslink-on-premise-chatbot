@@ -27,6 +27,35 @@ st.set_page_config(page_title="Frontline Assistant", page_icon="🚆", layout="w
 ICON = {"ok": "✅", "warn": "⚠️", "stop": "⛔", "info": "ℹ️"}
 
 
+# ------------------------------------------------------------------ first start
+@st.cache_resource(show_spinner="First start: fetching the documents and building the search index (about a minute) …")
+def prepare_index() -> str:
+    """On a fresh server (e.g. Streamlit Community Cloud) download the documents if needed and build the index.
+    Returns an error message, or "" when the index is ready."""
+    if (config.INDEX_DIR / "chunks.jsonl").exists():
+        return ""
+    import importlib.util
+    from rag import ingest
+    try:
+        missing = [d for d in ingest.load_documents() if d["kind"] == "pdf" and not (config.DATA_DIR / d["file"]).exists()]
+        if missing:
+            spec = importlib.util.spec_from_file_location("download_documents", config.ROOT / "scripts" / "download_documents.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            module.main()
+        ingest.save_chunks(ingest.build_chunks())
+        return ""
+    except Exception as e:                          # missing document, network error, ...
+        return f"Could not prepare the documents ({e}). See the README, \"Get the documents\"."
+
+
+@st.cache_resource
+def prepare_demo() -> None:
+    """Public demo: create the demo accounts on first start (they then appear on the sign-in page)."""
+    if config.DEMO_MODE and not auth.load_users():
+        auth.create_demo_accounts()
+
+
 # ------------------------------------------------------------------ cached resources
 @st.cache_resource
 def load_retriever():
@@ -55,6 +84,11 @@ def log_feedback(entry: dict):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+problem = prepare_index()
+if problem:
+    st.error(problem)
+    st.stop()
+prepare_demo()
 try:
     retriever = load_retriever()
 except FileNotFoundError as e:

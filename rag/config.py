@@ -10,6 +10,10 @@ DOCUMENTS_FILE = DATA_DIR / "documents.yaml"
 STATE_DIR = Path(os.getenv("RAG_STATE_DIR", DATA_DIR))
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
+# Public demo (e.g. Streamlit Community Cloud): creates the demo accounts on first start, lists them on the
+# sign-in page, and stops visitors from resetting or disabling them. Never set this on a real deployment.
+DEMO_MODE = os.getenv("DEMO_MODE", "0").strip().lower() in ("1", "true", "yes", "on")
+
 # Ollama runs the language models locally (https://ollama.com). Nothing leaves the machine.
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "llama3.1:8b")

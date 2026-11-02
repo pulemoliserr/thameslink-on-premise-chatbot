@@ -240,8 +240,14 @@ def create_user(username: str, name: str, role: str, password: str | None = None
     return password
 
 
+def _demo_locked(username: str) -> None:
+    if config.DEMO_MODE and is_demo(username):
+        raise AuthError("This is a shared demo account, so it can't be changed in the public demo.")
+
+
 def reset_password(username: str, by: str = "") -> str:
     """Set a new random temporary password; the user must change it at the next sign-in."""
+    _demo_locked(username)
     password = generate_password()
     with _lock:
         users = load_users()
@@ -255,6 +261,7 @@ def reset_password(username: str, by: str = "") -> str:
 
 
 def update_user(username: str, by: str = "", role: str | None = None, active: bool | None = None) -> None:
+    _demo_locked(username)
     with _lock:
         users = load_users()
         user = users[username]
