@@ -3,11 +3,6 @@ venv
 **/__pycache__
 .pytest_cache
 eval/results
+library
 state
-data/users.json
-data/audit.jsonl
-data/feedback.jsonl
-data/caselog.jsonl
-data/index/embeddings.npy
-data/index/embeddings.json
-data/demo_credentials.json
+.git

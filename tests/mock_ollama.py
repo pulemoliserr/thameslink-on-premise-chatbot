@@ -58,8 +58,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send({"model": req["model"], "embeddings": [vec(t) for t in inputs]})
         elif self.path == "/api/chat":
             user = req["messages"][-1]["content"]
-            question = user.rsplit("Question from a member of staff:", 1)[-1]
-            sources = re.findall(r"^\[(\d+)\][^\n]*\n(.*?)(?=\n\n\[\d+\]|\n\nQuestion from)", user, re.S | re.M)
+            question = user.rsplit("):", 1)[-1] if "Question from" in user else user
+            sources = re.findall(r'<source n="(\d+)"[^>]*>\n(.*?)\n</source>', user, re.S)
             q = set(w[:6] for w in words(question))
             best = max(sources, key=lambda s: len(q & set(w[:6] for w in words(s[1]))), default=None)
             if not best or len(q & set(w[:6] for w in words(best[1]))) < max(1, len(q) // 3):

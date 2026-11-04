@@ -4,5 +4,5 @@ snowballstemmer>=2.2
 numpy>=1.26
 requests>=2.31
 PyYAML>=6.0
-streamlit>=1.40
+streamlit>=1.50
 pytest>=8.0

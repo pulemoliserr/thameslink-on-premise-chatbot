@@ -3,16 +3,11 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
-data/index/embeddings.npy
-data/index/embeddings.json
-data/feedback.jsonl
 eval/results/
-# The PDFs are third-party documents: keep them out of any PUBLIC repository.
-# data/raw/*.pdf
-data/users.json
-data/audit.jsonl
-data/caselog.jsonl
-data/demo_credentials.json
 *.tmp
-state/
 .streamlit/secrets.toml
+# Created by the app (documents changed in the app, accounts, logs, restore points): never commit
+library/
+state/
+# The PDFs are third-party documents: uncomment to keep them out of a PUBLIC repository
+# data/raw/*.pdf
