@@ -98,6 +98,8 @@ def main():
     args = ap.parse_args()
 
     qs = load_questions()
+    from rag import library
+    library.ensure_index()
     retriever = Retriever.load()
     out_dir = HERE / "results"
     out_dir.mkdir(exist_ok=True)

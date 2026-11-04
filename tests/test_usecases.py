@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rag import advisors, caselog  # noqa: E402
+from rag import advisors  # noqa: E402
 from rag.answer import answer  # noqa: E402
 from rag.retrieve import Retriever  # noqa: E402
 from rag.usecases import BY_ID, USE_CASES  # noqa: E402
@@ -14,6 +14,8 @@ from rag.usecases import BY_ID, USE_CASES  # noqa: E402
 
 @pytest.fixture(scope="module")
 def retriever():
+    from rag import library
+    library.ensure_index()
     return Retriever.load()
 
 
@@ -123,12 +125,3 @@ def test_fleet_table():
     rows = {advisors.fleet_label(r): r for r in advisors.load_fleet()}
     assert rows["Great Northern Class 717"]["accessible_toilet"] == "No"
     assert rows["Thameslink Class 700"]["on_train_staff"] == "No"
-
-
-# ---- case log
-def test_case_log_finds_similar_example(tmp_path, monkeypatch):
-    monkeypatch.setattr(caselog, "LOG", tmp_path / "caselog.jsonl")
-    sims = caselog.similar_cases("advance ticket, missed the train because the connection was late")
-    assert sims and "9.4" in sims[0][1]["conditions"]
-    caselog.add_case("Dog without lead on platform", "Asked to use a lead", "24.4")
-    assert caselog.similar_cases("dog lead")[0][1]["conditions"] == "24.4"

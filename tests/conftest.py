@@ -13,5 +13,5 @@ def pytest_collection_modifyitems(config, items):
         return
     skip = pytest.mark.skip(reason="source documents missing: run  python scripts/download_documents.py  first")
     for item in items:
-        if item.fspath.basename in ("test_pipeline.py", "test_usecases.py"):
+        if item.fspath.basename in ("test_pipeline.py", "test_usecases.py", "test_user_stories.py"):
             item.add_marker(skip)

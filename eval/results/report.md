@@ -1,4 +1,4 @@
-# Evaluation report — 2026-11-02 19:52
+# Evaluation report — 2026-11-04 18:23
 
 32 questions (26 answerable, 6 out of scope), 206 passages.
 
@@ -12,7 +12,7 @@
 
 | Generator | Correct | Cites right source | Wrongly refused | Correctly refused (out of scope) |
 | --- | --- | --- | --- | --- |
-| extractive | 88% | 85% | 8% | 100% |
+| extractive | 92% | 85% | 8% | 100% |
 
 ## Per question
 
@@ -31,7 +31,7 @@ Rank = position of the first correct passage (blank = not in top 10).
 | q09 | A wheelchair user is boarding at St Pancras. Will they need a ramp? | 1 | True |
 | q10 | What should a passenger do at an unstaffed station if they need help? | 1 | True |
 | q11 | What is the deadline for submitting a delay compensation claim? | 1 | True |
-| q12 | Is there an admin fee when refunding an unused ticket? | 3 | False |
+| q12 | Is there an admin fee when refunding an unused ticket? | 3 | True |
 | q13 | How much does it cost to replace a damaged ticket? | 2 | True |
 | q14 | The train was cancelled and the passenger decided not to travel. Can they get their money back? | 1 | True |
 | q15 | What must we do if disruption stops a passenger from finishing their journey? | – | True |

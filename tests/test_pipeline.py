@@ -18,7 +18,8 @@ sys.path.insert(0, str(ROOT))
 
 @pytest.fixture(scope="session")
 def chunks():
-    from rag import ingest
+    from rag import ingest, library
+    library.ensure_library()          # first run: copy the bundled documents into the library folder
     return ingest.build_chunks()
 
 

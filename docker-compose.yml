@@ -1,6 +1,6 @@
 # Runs the Frontline Assistant and Ollama on one on-premise server.
 #   docker compose up -d --build
-# Then see README, "Run as a web app on a server", for downloading models and creating the first administrator.
+# Then see README, "Run as a web app on a server", for downloading models and creating the first IT administrator and document editor.
 services:
   ollama:
     image: ollama/ollama:latest        # pin a specific version for production
@@ -20,9 +20,11 @@ services:
     environment:
       OLLAMA_URL: http://ollama:11434
       RAG_STATE_DIR: /app/state
+      RAG_DATA_DIR: /app/state/library
+      NETWORK_GUARD: block            # refuse connections outside the network
       CHAT_MODEL: llama3.1:8b
     volumes:
-      - ./state:/app/state             # accounts, audit log, feedback, saved cases: back this folder up
+      - ./state:/app/state             # document library, accounts, logs, restore points: back this folder up
     ports:
       - "127.0.0.1:8501:8501"          # only reachable from the server itself; publish via an HTTPS reverse proxy
 

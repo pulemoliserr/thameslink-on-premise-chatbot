@@ -2,13 +2,30 @@
 import os
 from pathlib import Path
 
+APP_VERSION = "2.0.0"
+
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.getenv("RAG_DATA_DIR", ROOT / "data"))
+# Documents shipped with the app (read-only; copied into the library on first start).
+BUNDLED_DIR = ROOT / "data"
+# The document library: documents.yaml, raw/ (PDFs), curated/ (tables) and index/. Policy owners change it in the
+# app, so it lives outside the code (git-ignored "library" folder, or a persistent volume via RAG_DATA_DIR).
+DATA_DIR = Path(os.getenv("RAG_DATA_DIR", ROOT / "library"))
 INDEX_DIR = Path(os.getenv("RAG_INDEX_DIR", DATA_DIR / "index"))
 DOCUMENTS_FILE = DATA_DIR / "documents.yaml"
-# Data the app writes (accounts, audit log, feedback, saved cases). Keep it on a persistent volume and back it up.
-STATE_DIR = Path(os.getenv("RAG_STATE_DIR", DATA_DIR))
+# Data the app writes (accounts, logs, settings, test set, restore points). Keep it on a persistent volume and back it up.
+STATE_DIR = Path(os.getenv("RAG_STATE_DIR", ROOT / "state"))
 STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Document uploads and restore points
+MAX_UPLOAD_MB = float(os.getenv("MAX_UPLOAD_MB", "25"))
+SNAPSHOTS_DIR = STATE_DIR / "snapshots"
+SNAPSHOT_KEEP = int(os.getenv("SNAPSHOT_KEEP", "5"))
+
+# Network guard: "block" (default) refuses any connection to an address outside this machine and the
+# local network; "monitor" only records it; "off" disables the guard. See rag/netguard.py.
+NETWORK_GUARD = os.getenv("NETWORK_GUARD", "block").strip().lower()
+# Extra hosts the app may reach (comma-separated), e.g. a GPU server running Ollama inside the company network.
+ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h.strip()]
 
 # Public demo (e.g. Streamlit Community Cloud): creates the demo accounts on first start, lists them on the
 # sign-in page, and stops visitors from resetting or disabling them. Never set this on a real deployment.
