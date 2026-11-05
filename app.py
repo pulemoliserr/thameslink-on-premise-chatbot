@@ -1,17 +1,22 @@
 """Frontline Assistant, version 2: the frontline knowledge base (use case 1).
 
-Three user groups, each signing in to its own area:
-- Staff & customer service: ask questions (answers cite document, section and page), quick checks
-  for tickets, assistance, refunds and trains, and the documents themselves.
-- Policy owner: everything staff have, plus the document library (upload, replace, remove), checking
-  answers, the test set and the change history. Changing documents needs the "document editor" right.
-- IT & data protection: accounts, logs, privacy settings, the on-premise check, backups and recovery.
+Every user group from the status meeting signs in to its own area (roles in rag/auth.py):
+- Staff and customer service: station staff, station duty managers, conductors, revenue protection
+  officers and customer relations agents. Each lands on what their user story needs (default search
+  topic, example questions, quick checks) and can ask about anything in the documents.
+- Passengers (indirect users) do not sign in: staff show or send them the "for the passenger" version
+  of an answer, with its source.
+- Policy owner: the document library (upload, replace, remove), checking answers, the test set and the
+  change history. Changing documents needs the "document editor" right.
+- IT operations: accounts, backups and recovery, system, response time.
+- Data protection lead: privacy settings and retention, logs, the on-premise check, the deletion check.
 
 Run:  python -m streamlit run app.py          Accounts:  python -m rag.auth --help
 """
 from __future__ import annotations
 
 import os
+import re
 import time
 from dataclasses import asdict
 from urllib.parse import urlparse
@@ -126,14 +131,21 @@ AREAS = {
     "tests": ("🧪 Test set", "manage_testset"),
     "accounts": ("👥 Accounts", "manage_users"),
     "logs": ("📜 Activity & logs", "view_audit"),
-    "privacy": ("🔒 Privacy & on-premise", "manage_settings"),
+    "privacy": ("🔒 Privacy & on-premise", "view_privacy"),
     "backups": ("💾 Backups & recovery", "manage_backups"),
     "system": ("🛠️ System", "system"),
 }
 
 
 def areas_for(u: auth.User) -> list[str]:
-    return [a for a, (_, perm) in AREAS.items() if u.can(perm)]
+    """The areas a user may open, their landing area first."""
+    mine = [a for a, (_, perm) in AREAS.items() if u.can(perm)]
+    landing = auth.ROLES[u.role].get("landing")
+    return ([landing] if landing in mine else []) + [a for a in mine if a != landing]
+
+
+def role_info() -> dict:
+    return auth.ROLES[user.role]
 
 
 def sign_out(reason: str = ""):
@@ -252,7 +264,7 @@ with st.sidebar:
         st.warning(f"Ollama is running, but `{config.CHAT_MODEL}` is not installed.")
     st.caption(f"{len(library.registry())} documents · {len(retriever.chunks)} passages"
                + (" · keyword + meaning search" if retriever.has_embeddings else " · keyword search"))
-    if problems and user.role != "staff":
+    if problems and role_info()["kind"] != "frontline":
         st.error(f"{len(problems)} quick-check rule(s) no longer match the documents (see Check answers).")
     st.caption(f"Version {config.APP_VERSION}")
 
@@ -322,6 +334,10 @@ def render_answer(msg: dict, key: str):
     for note in a["notes"]:
         st.info(note)
     render_sources(a, key)
+    if a["found"]:
+        with st.popover("🧾 For the passenger"):
+            st.caption("Plain version to read out, show on screen, or paste into a reply (copy icon at the top right).")
+            st.code(passenger_version(a), language=None, wrap_lines=True)
     secs, target = msg.get("seconds", 0), cfg["response_target_seconds"]
     c1, c2, c3 = st.columns([1, 1, 6])
     for col, rating, icon in ((c1, "up", "👍"), (c2, "down", "👎")):
@@ -340,6 +356,27 @@ def render_answer(msg: dict, key: str):
                 st.session_state[f"rated_{key}"] = True
                 st.toast("Thanks — feedback sent.")
                 st.rerun()
+
+
+def passenger_version(a: dict) -> str:
+    """Plain text for the passenger (indirect user): the answer without source numbers, plus where it comes from.
+    Staff read it out, show it, or paste it into a reply."""
+    meta = doc_meta()
+    lines = []
+    for line in a["text"].splitlines():
+        line = line.strip()
+        if not line or line.lower().startswith("most relevant passages"):
+            continue
+        line = re.sub(r"\s*(\[\d+\])+", "", line).lstrip("-• ").strip()
+        line = re.sub(r"^\d{1,2}\.\d{1,2}(\.\d+)?\s+", "", line)          # drop clause numbers such as "30.1"
+        line = re.sub(r"^(INFORMATION|NOTE|IMPORTANT):\s*", "", line, flags=re.I)
+        if line:
+            lines.append(line[0].upper() + line[1:])
+    cited = [s for s in a["sources"] if s["cited"]] or a["sources"][:1]
+    refs = list(dict.fromkeys(
+        f"{s['doc_title']}, {s['label']}" + (f" ({meta[s['doc_id']]['version']})" if meta.get(s["doc_id"], {}).get("version") else "")
+        for s in cited))
+    return ("\n".join(f"• {l}" for l in lines) + "\n\nWhere this comes from: " + "; ".join(refs) + ".")
 
 
 def ask(question: str, topic: str, use_llm: bool) -> dict:
@@ -362,13 +399,15 @@ def page_ask():
     st.markdown("## 💬 Ask the documents")
     st.caption("Answers come only from the policy documents and cite document, section and page. "
                "If the documents don't cover a question, the answer says so.")
+    if role_info().get("story"):
+        st.markdown(f"> {role_info()['story']}")
     chat = st.session_state.setdefault("chat", [])        # this browser session only
-    topic = st.segmented_control("Search in", list(TOPICS), format_func=TOPICS.get, default="policy",
-                                 key="topic") or "policy"
+    topic = st.segmented_control("Search in", list(TOPICS), format_func=TOPICS.get,
+                                 default=role_info().get("topic", "policy"), key="topic") or "policy"
     pending = None
     if not chat:
         cols = st.columns(2)
-        for i, ex in enumerate(EXAMPLES):
+        for i, ex in enumerate(role_info().get("examples") or EXAMPLES):
             if cols[i % 2].button(ex, key=f"ex_{i}", use_container_width=True):
                 pending = ex
     for i, msg in enumerate(chat):
@@ -415,74 +454,85 @@ def page_ask():
                 st.rerun()
 
 
+CHECKS = {"tickets": "🎫 Tickets on board", "assist": "♿ Assistance", "claims": "💷 Refunds & delays",
+          "trains": "🚆 Trains"}
+
+
+def check_tickets():
+    situation = st.selectbox("What is the situation?", list(TICKET_SITUATIONS), format_func=TICKET_SITUATIONS.get,
+                             key="t_sit")
+    reasons, split_calls, area_t, child_age = [], None, False, ""
+    if situation == "no_ticket":
+        st.markdown("**Did any of these apply at the departure station?**")
+        reasons = [r for r, label in NO_TICKET_REASONS.items() if st.checkbox(label, key=f"t_r_{r}")]
+    elif situation == "split_ticket":
+        split_calls = st.radio("Does the train call at the station where the tickets change?", ["Yes", "No"],
+                               horizontal=True, key="t_split") == "Yes"
+        area_t = st.checkbox("One of the tickets is a Season, zonal or other area ticket", key="t_area")
+    elif situation == "child":
+        child_age = st.radio("Age", ["under5", "5to15"], horizontal=True, key="t_age",
+                             format_func={"under5": "Under 5, with a ticket holder", "5to15": "5 to 15"}.get)
+    scheme = st.radio("Penalty Fare scheme at this station?", ["unknown", "yes", "no"], horizontal=True, key="t_pf",
+                      format_func={"unknown": "Don’t know", "yes": "Yes, notices displayed", "no": "No"}.get)
+    st.divider()
+    render_findings(advisors.ticket_advice(situation, reasons, scheme, split_calls, area_t, child_age))
+
+
+def check_assist():
+    c1, c2 = st.columns(2)
+    with c1:
+        aid = st.selectbox("Mobility aid", ["none", "wheelchair", "powerchair", "scooter"], key="a_aid",
+                           format_func={"none": "None", "wheelchair": "Manual wheelchair", "powerchair": "Powerchair",
+                                        "scooter": "Mobility scooter"}.get)
+        w = l = kg = tr = 0
+        if aid != "none":
+            w = st.number_input("Width (mm)", 0, 2000, 650, step=10, key="a_w")
+            l = st.number_input("Length (mm)", 0, 3000, 1100, step=10, key="a_l")
+            kg = st.number_input("Weight including user (kg)", 0, 600, 180, step=5, key="a_kg")
+            tr = st.number_input("Turning radius (mm, 0 if unknown)", 0, 3000, 0, step=10, key="a_tr")
+        dog = st.checkbox("Travelling with an assistance dog", key="a_dog")
+        lug = st.number_input("Items of luggage needing help", 0, 10, 0, key="a_lug")
+    with c2:
+        booked = st.radio("Booked in advance?", ["Booked", "Unbooked"], horizontal=True, key="a_b") == "Booked"
+        hours = st.number_input("Hours of notice before departure", 0.0, 168.0, 3.0, step=0.5, key="a_h") if booked else 0
+        station = st.radio("Departure station", ["staffed", "unstaffed"], horizontal=True, key="a_st",
+                           format_func=str.capitalize)
+        core = st.checkbox("Boarding in the Thameslink Core (St Pancras – London Bridge)", key="a_core")
+        other = st.checkbox("Journey includes another train operator", key="a_other")
+        disr = st.checkbox("Disruption or rail replacement transport expected", key="a_dis")
+    st.divider()
+    render_findings(advisors.assistance_check(aid, w, l, kg, tr, booked, hours, station, core, other, lug, disr, dog))
+
+
+def check_claims():
+    c1, c2 = st.columns(2)
+    with c1:
+        event = st.selectbox("What happened?", list(CLAIM_EVENTS), format_func=CLAIM_EVENTS.get, key="c_ev")
+        ticket = st.selectbox("Ticket", list(TICKET_TYPES), format_func=TICKET_TYPES.get, key="c_t")
+    with c2:
+        minutes = st.number_input("Minutes late at destination", 0, 600, 75, step=5, key="c_m") if event == "late" else 0
+        days = st.number_input("Days since the journey (or intended travel date)", 0, 365, 5, key="c_d")
+        price = leg = None
+        if event == "late" and ticket != "season":
+            if ticket == "return_one":
+                leg = st.number_input("Price of the delayed leg (£, optional)", 0.0, 2000.0, 0.0, step=0.5, key="c_leg") or None
+            else:
+                price = st.number_input("Ticket price paid (£, optional)", 0.0, 2000.0, 0.0, step=0.5, key="c_p") or None
+        refund_already = st.checkbox("Passenger already received a full refund for not travelling",
+                                     key="c_ref") if event == "late" else False
+    st.divider()
+    render_findings(advisors.claim_advice(event, ticket, minutes, days, price, leg, refund_already))
+
+
 def page_checks():
     st.markdown("## 🧭 Quick checks")
     st.caption("Describe the situation; the check lists the rules that apply, each with its exact source.")
     has_fleet = "fleet" in doc_meta() and library.doc_path(doc_meta()["fleet"]).exists()
-    tabs = st.tabs(["🎫 Tickets on board", "♿ Assistance", "💷 Refunds & delays"] + (["🚆 Trains"] if has_fleet else []))
-    with tabs[0]:
-        situation = st.selectbox("What is the situation?", list(TICKET_SITUATIONS), format_func=TICKET_SITUATIONS.get,
-                                 key="t_sit")
-        reasons, split_calls, area_t, child_age = [], None, False, ""
-        if situation == "no_ticket":
-            st.markdown("**Did any of these apply at the departure station?**")
-            reasons = [r for r, label in NO_TICKET_REASONS.items() if st.checkbox(label, key=f"t_r_{r}")]
-        elif situation == "split_ticket":
-            split_calls = st.radio("Does the train call at the station where the tickets change?", ["Yes", "No"],
-                                   horizontal=True, key="t_split") == "Yes"
-            area_t = st.checkbox("One of the tickets is a Season, zonal or other area ticket", key="t_area")
-        elif situation == "child":
-            child_age = st.radio("Age", ["under5", "5to15"], horizontal=True, key="t_age",
-                                 format_func={"under5": "Under 5, with a ticket holder", "5to15": "5 to 15"}.get)
-        scheme = st.radio("Penalty Fare scheme at this station?", ["unknown", "yes", "no"], horizontal=True, key="t_pf",
-                          format_func={"unknown": "Don’t know", "yes": "Yes, notices displayed", "no": "No"}.get)
-        st.divider()
-        render_findings(advisors.ticket_advice(situation, reasons, scheme, split_calls, area_t, child_age))
-    with tabs[1]:
-        c1, c2 = st.columns(2)
-        with c1:
-            aid = st.selectbox("Mobility aid", ["none", "wheelchair", "powerchair", "scooter"], key="a_aid",
-                               format_func={"none": "None", "wheelchair": "Manual wheelchair", "powerchair": "Powerchair",
-                                            "scooter": "Mobility scooter"}.get)
-            w = l = kg = tr = 0
-            if aid != "none":
-                w = st.number_input("Width (mm)", 0, 2000, 650, step=10, key="a_w")
-                l = st.number_input("Length (mm)", 0, 3000, 1100, step=10, key="a_l")
-                kg = st.number_input("Weight including user (kg)", 0, 600, 180, step=5, key="a_kg")
-                tr = st.number_input("Turning radius (mm, 0 if unknown)", 0, 3000, 0, step=10, key="a_tr")
-            dog = st.checkbox("Travelling with an assistance dog", key="a_dog")
-            lug = st.number_input("Items of luggage needing help", 0, 10, 0, key="a_lug")
-        with c2:
-            booked = st.radio("Booked in advance?", ["Booked", "Unbooked"], horizontal=True, key="a_b") == "Booked"
-            hours = st.number_input("Hours of notice before departure", 0.0, 168.0, 3.0, step=0.5, key="a_h") if booked else 0
-            station = st.radio("Departure station", ["staffed", "unstaffed"], horizontal=True, key="a_st",
-                               format_func=str.capitalize)
-            core = st.checkbox("Boarding in the Thameslink Core (St Pancras – London Bridge)", key="a_core")
-            other = st.checkbox("Journey includes another train operator", key="a_other")
-            disr = st.checkbox("Disruption or rail replacement transport expected", key="a_dis")
-        st.divider()
-        render_findings(advisors.assistance_check(aid, w, l, kg, tr, booked, hours, station, core, other, lug, disr, dog))
-    with tabs[2]:
-        c1, c2 = st.columns(2)
-        with c1:
-            event = st.selectbox("What happened?", list(CLAIM_EVENTS), format_func=CLAIM_EVENTS.get, key="c_ev")
-            ticket = st.selectbox("Ticket", list(TICKET_TYPES), format_func=TICKET_TYPES.get, key="c_t")
-        with c2:
-            minutes = st.number_input("Minutes late at destination", 0, 600, 75, step=5, key="c_m") if event == "late" else 0
-            days = st.number_input("Days since the journey (or intended travel date)", 0, 365, 5, key="c_d")
-            price = leg = None
-            if event == "late" and ticket != "season":
-                if ticket == "return_one":
-                    leg = st.number_input("Price of the delayed leg (£, optional)", 0.0, 2000.0, 0.0, step=0.5, key="c_leg") or None
-                else:
-                    price = st.number_input("Ticket price paid (£, optional)", 0.0, 2000.0, 0.0, step=0.5, key="c_p") or None
-            refund_already = st.checkbox("Passenger already received a full refund for not travelling",
-                                         key="c_ref") if event == "late" else False
-        st.divider()
-        render_findings(advisors.claim_advice(event, ticket, minutes, days, price, leg, refund_already))
-    if has_fleet:
-        with tabs[3]:
-            page_trains()
+    mine = [c for c in role_info().get("checks", list(CHECKS)) if c != "trains" or has_fleet]
+    funcs = {"tickets": check_tickets, "assist": check_assist, "claims": check_claims, "trains": page_trains}
+    for tab, check in zip(st.tabs([CHECKS[c] for c in mine]), mine):
+        with tab:
+            funcs[check]()
 
 
 def page_trains():
@@ -859,7 +909,7 @@ def page_logs():
 
 def page_privacy():
     st.markdown("## 🔒 Privacy & on-premise")
-    tabs = st.tabs(["🛰️ On-premise check", "⚙️ Settings"])
+    tabs = st.tabs(["🛰️ On-premise check", "⚙️ Settings", "🧹 Deletion check"])
     with tabs[0]:
         host = urlparse(config.OLLAMA_URL).hostname or ""
         st.table(pd.DataFrame([
@@ -887,20 +937,39 @@ def page_privacy():
             else:
                 st.error(f"External connection attempts: {g.attempts}. Answer found: {a.found}")
     with tabs[1]:
+        st.caption("Privacy settings belong to the data protection lead; the response-time target to IT operations. "
+                   "Every change is written to the audit log.")
         with st.form("settings"):
             new = {}
             for key, label in settings.LABELS.items():
+                mine = user.can(settings.OWNER[key])
+                owner = "data protection lead" if settings.OWNER[key] == "manage_privacy" else "IT operations"
+                helptext = None if mine else f"Changed by the {owner}."
                 if isinstance(settings.DEFAULTS[key], bool):
-                    new[key] = st.toggle(label, value=cfg[key])
+                    new[key] = st.toggle(label, value=cfg[key], disabled=not mine, help=helptext)
                 else:
-                    new[key] = st.number_input(label, min_value=1, max_value=3650, value=int(cfg[key]))
+                    new[key] = st.number_input(label, min_value=1, max_value=3650, value=int(cfg[key]),
+                                               disabled=not mine, help=helptext)
             if st.form_submit_button("Save settings", type="primary"):
                 try:
-                    settings.update(user, **new)
+                    settings.update(user, **{k: v for k, v in new.items() if user.can(settings.OWNER[k])})
                     st.success("Saved. Every change is in the audit log.")
                     st.rerun()
                 except (ValueError, auth.PermissionDenied) as e:
                     st.error(str(e))
+    with tabs[2]:
+        st.caption("Removed documents must be gone everywhere: library, search index, embeddings, restore points and "
+                   "kept chat histories. This checks every document removed so far.")
+        if not library.removed_documents():
+            st.info("No documents have been removed yet.")
+        elif not user.can("verify_deletion"):
+            st.caption("The deletion check is run by the data protection lead.")
+        elif st.button("Run the deletion check", type="primary"):
+            rows = library.deletion_check(user)
+            st.dataframe(pd.DataFrame([{
+                "removed": r["time"][:16].replace("T", " "), "document": r["short"], "by": r["by"],
+                "result": "✅ gone everywhere" if not r["leftovers"] else "❌ still in: " + "; ".join(r["leftovers"])}
+                for r in rows]), use_container_width=True, hide_index=True)
 
 
 def page_backups():

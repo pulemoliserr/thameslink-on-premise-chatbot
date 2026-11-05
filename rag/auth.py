@@ -1,7 +1,8 @@
 """Accounts, roles and sign-in for the Frontline Assistant.
 
 - Passwords are stored only as salted scrypt hashes (Python standard library), never in plain text.
-- Each user has one of three roles (staff, policy owner, IT & data protection). The role decides
+- Each user has one of eight roles: station staff, station duty manager, conductor, revenue protection
+  officer, customer relations agent, policy owner, IT operations, data protection lead. The role decides
   the permissions; every admin-only action checks them on the server (`require`), not only the menu.
 - Changing documents needs the policy-owner role AND the named "document editor" right, which
   only existing document editors can grant (separation of duties: IT manages accounts, the
@@ -12,7 +13,7 @@
 Accounts live in data/users.json on the server. Create them from the command line:
 
     python -m rag.auth create-admin itlead
-    python -m rag.auth add jsmith --role staff --name "Jo Smith"
+    python -m rag.auth add jsmith --role conductor --name "Jo Smith"
     python -m rag.auth add pbrown --role policy_owner --editor     # may change documents
     python -m rag.auth demo            # one account per role; passwords shown on the sign-in page
     python -m rag.auth demo --reset    # new passwords for the existing demo accounts
@@ -50,22 +51,80 @@ LOCK_SECONDS = 15 * 60
 SESSION_IDLE_SECONDS = 30 * 60
 MIN_PASSWORD_LEN = 10
 
-# role id -> display name, who it is for, permissions
+# Every user named in the status-meeting deck (slides 3, 6 and 7). Passengers are indirect users: they do not
+# sign in, staff show them the "for the passenger" version of an answer.
+#   kind:    frontline | policy | it  (which part of the app)
+#   landing: the area they land on;  topic: default search topic;  checks: quick checks, most relevant first
+#   examples: questions from their user story
+FRONTLINE = {"chat", "advisors", "view_documents"}
 ROLES: dict[str, dict] = {
-    "staff": {"name": "Staff & customer service",
-              "group": "Station teams, conductors, revenue protection, customer relations",
-              "perms": {"chat", "advisors", "view_documents"}},
-    "policy_owner": {"name": "Policy owner", "group": "Owner of the policy documents",
-                     "perms": {"chat", "advisors", "view_documents", "inspect_answers", "manage_testset",
-                               "view_document_history", "view_feedback"}},
-    "it": {"name": "IT & data protection", "group": "IT operations, data protection lead",
-           "perms": {"manage_users", "view_audit", "view_usage", "manage_settings",
-                     "manage_backups", "system"}},
+    "station_staff": {
+        "name": "Station staff", "group": "Station teams", "kind": "frontline", "perms": FRONTLINE,
+        "landing": "ask", "topic": "assist", "checks": ["assist", "trains", "tickets"],
+        "story": "As station staff, I want assistance procedures at hand, so disabled passengers get the right help.",
+        "examples": ["How much notice is needed to book Passenger Assist?",
+                     "What should a passenger do at an unstaffed station if they need help?",
+                     "Can a mobility scooter travel on the train?",
+                     "Which trains have an accessible toilet?"]},
+    "duty_manager": {
+        "name": "Station duty manager", "group": "Station duty managers", "kind": "frontline", "perms": FRONTLINE,
+        "landing": "ask", "topic": "claims", "checks": ["claims", "assist", "tickets", "trains"],
+        "story": "As a station duty manager, I want refund rules at hand during disruption, so every passenger gets "
+                 "the same answer.",
+        "examples": ["My train was cancelled and I decided not to travel. Can I get my money back?",
+                     "What must we do if disruption stops a passenger from finishing their journey?",
+                     "What compensation is due when a train is more than an hour late?",
+                     "Can a passenger use their ticket on another train company's service during disruption?"]},
+    "conductor": {
+        "name": "Conductor", "group": "Conductors and on-board staff", "kind": "frontline", "perms": FRONTLINE,
+        "landing": "checks", "topic": "tickets", "checks": ["tickets", "trains", "assist"],
+        "story": "As a conductor, I want quick answers on tickets, luggage, cycles and dogs, so I can settle issues "
+                 "on board.",
+        "examples": ["Can a passenger take a folding bike on the train?", "How many items of luggage can a passenger take?",
+                     "Can a passenger bring a dog on the train?",
+                     "Can someone with a standard ticket sit in first class?"]},
+    "revenue": {
+        "name": "Revenue protection officer", "group": "Revenue protection", "kind": "frontline", "perms": FRONTLINE,
+        "landing": "checks", "topic": "tickets", "checks": ["tickets"],
+        "story": "As a revenue protection officer, I want the ticket rules and Penalty Fare conditions at hand, so "
+                 "every passenger is treated the same way.",
+        "examples": ["When can a passenger be charged a Penalty Fare?",
+                     "The ticket machine was broken and the ticket office was closed. What now?",
+                     "A passenger forgot their Railcard. What happens?",
+                     "Can a passenger break their journey on an Off-Peak ticket?"]},
+    "customer_relations": {
+        "name": "Customer relations agent", "group": "Customer relations and customer service agents",
+        "kind": "frontline", "perms": FRONTLINE,
+        "landing": "ask", "topic": "policy", "checks": ["claims", "tickets", "assist"],
+        "story": "As a customer service agent, I want every policy answer to cite the policy and section, so I can "
+                 "explain decisions to passengers.",
+        "examples": ["What is the deadline for submitting a delay compensation claim?",
+                     "Is there an admin fee when refunding an unused ticket?",
+                     "How much does it cost to replace a damaged ticket?",
+                     "What is a passenger entitled to if their train is cancelled?"]},
+    "policy_owner": {
+        "name": "Policy owner", "group": "Owner of the policy documents", "kind": "policy",
+        "perms": FRONTLINE | {"inspect_answers", "manage_testset", "view_document_history", "view_feedback"},
+        "landing": "manage", "topic": "policy", "checks": ["tickets", "assist", "claims", "trains"],
+        "story": "As a policy owner, I want to keep the documents current and check what the chatbot says."},
+    "it_ops": {
+        "name": "IT operations", "group": "IT operations", "kind": "it",
+        "perms": {"manage_users", "view_audit", "view_usage", "view_privacy", "manage_operations",
+                  "manage_backups", "system"},
+        "landing": "accounts",
+        "story": "As IT, I want everything on our own server, controlled access and a way to restore after a failed update."},
+    "data_protection": {
+        "name": "Data protection lead", "group": "Data protection", "kind": "it",
+        "perms": {"view_audit", "view_usage", "view_privacy", "manage_privacy", "verify_deletion"},
+        "landing": "privacy",
+        "story": "As data protection, I want chats private, minimal logs with short retention, and removed documents "
+                 "gone everywhere."},
 }
 # Rights a policy owner only has when named a document editor.
 EDITOR_PERMS = {"edit_documents", "manage_editors"}
-OLD_ROLES = {"frontline": "staff", "revenue": "staff", "assist": "staff", "claims": "staff",
-             "station": "staff", "admin": "it"}           # accounts from version 1
+OLD_ROLES = {"frontline": "station_staff", "revenue": "revenue", "assist": "station_staff",   # version 1
+             "claims": "customer_relations", "station": "duty_manager", "admin": "it_ops",
+             "staff": "customer_relations", "it": "it_ops"}                                    # version 2.0
 
 _lock = threading.RLock()   # re-entrant: audit() is also called while the lock is held
 
@@ -201,7 +260,7 @@ def authenticate(username: str, password: str) -> User:
         user = users.get(username)
         if user is None:
             # spend the same time hashing, so response time does not reveal which usernames exist
-            _check(password, User("x", "", "staff", _DUMMY_SALT, _DUMMY_HASH))
+            _check(password, User("x", "", "station_staff", _DUMMY_SALT, _DUMMY_HASH))
             audit("login_failed", username, detail="unknown user")
             raise AuthError(generic)
         if not user.active:
@@ -306,7 +365,7 @@ def update_user(username: str, by: str = "", role: str | None = None, active: bo
         if role is not None:
             if role not in ROLES:
                 raise AuthError(f"Unknown role '{role}'.")
-            if user.role == "it" and role != "it" and _admins(users) == 1:
+            if user.role == "it_ops" and role != "it_ops" and _admins(users) == 1:
                 raise AuthError("Keep at least one IT administrator.")
             if role != "policy_owner" and user.doc_editor:
                 if _editors(users) == 1:
@@ -314,7 +373,7 @@ def update_user(username: str, by: str = "", role: str | None = None, active: bo
                 user.doc_editor = False
             user.role = role
         if active is not None:
-            if not active and user.role == "it" and _admins(users) == 1:
+            if not active and user.role == "it_ops" and _admins(users) == 1:
                 raise AuthError("Keep at least one active IT administrator.")
             if not active and user.doc_editor and _editors(users) == 1:
                 raise AuthError("This is the last document editor. Name another editor first.")
@@ -327,7 +386,7 @@ def update_user(username: str, by: str = "", role: str | None = None, active: bo
 
 
 def _admins(users: dict[str, User]) -> int:
-    return sum(1 for u in users.values() if u.role == "it" and u.active)
+    return sum(1 for u in users.values() if u.role == "it_ops" and u.active)
 
 
 def _editors(users: dict[str, User]) -> int:
@@ -414,7 +473,9 @@ def forget_demo(username: str) -> None:
             _save_demo(saved)
 
 
-DEMO_USERNAMES = {"staff": "demo.staff", "policy_owner": "demo.policy", "it": "demo.it"}
+DEMO_USERNAMES = {"station_staff": "demo.station", "duty_manager": "demo.dutymanager", "conductor": "demo.conductor",
+                  "revenue": "demo.revenue", "customer_relations": "demo.relations", "policy_owner": "demo.policy",
+                  "it_ops": "demo.itops", "data_protection": "demo.dataprotection"}
 
 
 def create_demo_accounts(reset: bool = False) -> list[tuple[str, str, str]]:
@@ -470,7 +531,7 @@ def main(argv=None):
             pw = getpass.getpass("Password for the new administrator: ")
             if pw != getpass.getpass("Repeat the password: "):
                 sys.exit("Passwords do not match.")
-            create_user(args.username, args.name, "it", pw, by="cli", must_change=False)
+            create_user(args.username, args.name, "it_ops", pw, by="cli", must_change=False)
             print(f"IT administrator '{args.username}' created.")
         elif args.cmd == "add":
             pw = create_user(args.username, args.name, args.role, by="cli", doc_editor=args.editor)

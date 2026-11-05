@@ -1,6 +1,7 @@
-"""Settings IT & data protection can change in the app (stored in STATE_DIR/settings.json).
+"""Settings changed in the app (stored in STATE_DIR/settings.json). Every change is written to the audit log.
 
-Every change is written to the audit log.
+Privacy settings (retention, chat history) belong to the data protection lead; the response-time
+target belongs to IT operations.
 """
 from __future__ import annotations
 
@@ -16,6 +17,10 @@ DEFAULTS = {
     "allow_chat_history": False,        # may staff choose to keep their chat history on the server?
     "chat_history_days": 30,            # how long kept chat histories are stored
 }
+# which permission may change each setting
+OWNER = {"response_target_seconds": "manage_operations", "usage_log_days": "manage_privacy",
+         "feedback_days": "manage_privacy", "audit_log_days": "manage_privacy", "allow_chat_history": "manage_privacy",
+         "chat_history_days": "manage_privacy"}
 LABELS = {
     "response_target_seconds": "Agreed response time (seconds)",
     "usage_log_days": "Keep the technical request log for (days)",
@@ -42,17 +47,22 @@ def load() -> dict:
 
 
 def update(actor, **changes) -> dict:
-    auth.require(actor, "manage_settings")
+    """Change settings. Every changed setting needs its owner's permission (checked before anything is saved)."""
     by = actor if isinstance(actor, str) else actor.username
     current = load()
+    changed = {}
     for key, value in changes.items():
         if key not in DEFAULTS:
             raise ValueError(f"Unknown setting {key}")
         value = type(DEFAULTS[key])(value)
         if isinstance(value, int) and not isinstance(value, bool) and value < 1:
             raise ValueError(f"{LABELS[key]} must be at least 1.")
-        if current[key] != value:
-            auth.audit("setting_changed", key, by=by, detail=f"{current[key]} → {value}")
-            current[key] = value
+        if value != current[key]:
+            changed[key] = value
+    for key in changed:
+        auth.require(actor, OWNER[key])
+    for key, value in changed.items():
+        auth.audit("setting_changed", key, by=by, detail=f"{current[key]} → {value}")
+        current[key] = value
     _file().write_text(json.dumps(current, indent=1), encoding="utf-8")
     return current

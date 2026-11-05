@@ -323,7 +323,27 @@ def remove_document(actor, doc_id: str, confirm: str) -> list[str]:
     from . import history
     history.forget_document(doc_id)
     auth.audit("document_removed", doc_id, by=by, detail=f"{doc['short']} · {doc.get('version', '')}")
+    with (config.STATE_DIR / "removed_documents.jsonl").open("a", encoding="utf-8") as fh:   # ids and file names only
+        fh.write(json.dumps({"time": _now(), "by": by, "id": doc_id, "short": doc["short"], "file": doc["file"],
+                             "source_pdf": doc.get("source_pdf")}) + "\n")
     return leftovers(doc)
+
+
+def removed_documents() -> list[dict]:
+    """Documents removed so far (for the data protection lead's deletion check)."""
+    path = config.STATE_DIR / "removed_documents.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def deletion_check(actor) -> list[dict]:
+    """Check every removed document for leftovers. Returns one row per removed document."""
+    auth.require(actor, "verify_deletion")
+    rows = [{**d, "leftovers": leftovers(d)} for d in removed_documents()]
+    auth.audit("deletion_check", "", by=actor if isinstance(actor, str) else actor.username,
+               detail=f"{len(rows)} documents checked, {sum(bool(r['leftovers']) for r in rows)} with leftovers")
+    return rows
 
 
 def leftovers(doc: dict) -> list[str]:

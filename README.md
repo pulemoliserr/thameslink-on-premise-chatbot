@@ -6,17 +6,26 @@
 
 ![Sign-in](docs/signin.png)
 
-## What changed in version 2
+## User groups
 
-Version 1 had five assistants for five user groups. Version 2 follows the user stories from status meeting 1: **three user groups**, and new features for the policy owner and for IT & data protection.
+Every user named in the status-meeting deck (slides 3, 6 and 7) has its own role. Each signs in to its own area and lands on what its user story needs.
 
-| User group | Area in the app |
-| --- | --- |
-| **Staff & customer service** (station teams, conductors, revenue protection, customer relations) | 💬 Ask · 🧭 Quick checks (tickets, assistance, refunds, trains) · 📄 Documents |
-| **Policy owner** | Everything staff have, plus 🗂️ Manage documents · 🔍 Check answers · 🧪 Test set |
-| **IT & data protection** | 👥 Accounts · 📜 Activity & logs · 🔒 Privacy & on-premise · 💾 Backups & recovery · 🛠️ System |
+| User (deck) | Role | Lands on | Default search topic · quick checks | Demo account |
+| --- | --- | --- | --- | --- |
+| Station teams | Station staff | 💬 Ask | Assistance · assistance, trains, tickets | `demo.station` |
+| Station duty manager | Station duty manager | 💬 Ask | Refunds & disruption · refunds, assistance, tickets, trains | `demo.dutymanager` |
+| Conductors | Conductor | 🧭 Quick checks | Tickets & fares · tickets, trains, assistance | `demo.conductor` |
+| Revenue protection | Revenue protection officer | 🧭 Quick checks | Tickets & fares · tickets | `demo.revenue` |
+| Customer relations / customer service agent | Customer relations agent | 💬 Ask | All documents · refunds, tickets, assistance | `demo.relations` |
+| Policy owner | Policy owner (+ document editor right) | 🗂️ Manage documents | also 🔍 Check answers · 🧪 Test set | `demo.policy` |
+| IT operations | IT operations | 👥 Accounts | 📜 Logs · 🔒 On-premise check · 💾 Backups & recovery · 🛠️ System | `demo.itops` |
+| Data protection lead | Data protection lead | 🔒 Privacy & on-premise | privacy settings and retention · 🧹 deletion check · 📜 logs | `demo.dataprotection` |
+| Passengers (indirect) | no sign-in | — | staff show or send them the **🧾 For the passenger** version of an answer | — |
 
-Changing documents needs the policy-owner role **and** the named *document editor* right. IT creates accounts but cannot give that right; only an existing document editor can (separation of duties).
+- **All staff roles** can ask about anything in the documents and open every PDF. The role only decides the starting point: their user story, example questions, default topic and the order of the quick checks.
+- **Document editing** needs the policy-owner role *and* the named document editor right. IT creates accounts but cannot give that right; only an existing document editor can.
+- **IT operations and the data protection lead have separate duties.** IT runs accounts, backups, the system and the response-time target. The data protection lead owns retention and chat-history settings and runs the deletion check. Neither can change the other's settings.
+- **Passengers** get the same answer from every member of staff. The passenger version is the answer in plain text, without source numbers or internal notes, ending with "Where this comes from: …" (document, section and version). Staff can read it out, show it on screen, or paste it into a reply.
 
 ## User stories and how they are met
 
@@ -62,13 +71,13 @@ Requires **Python 3.10 or newer**.
 pip install -r requirements.txt
 python scripts/download_documents.py   # only if data/raw has no PDFs
 python -m rag.ingest                   # copies data/ into library/ and builds the search index
-python -m rag.auth demo                # demo.staff, demo.policy (document editor), demo.it
+python -m rag.auth demo                # one demo account per user group (8)
 python -m streamlit run app.py         # http://localhost:8501
 ```
 
 The sign-in page has a **Demo accounts** dropdown with copyable usernames and passwords. New demo passwords: `python -m rag.auth demo --reset`.
 
-**Upgrading from version 1:** version 1 kept accounts in `data/`; version 2 keeps them in `state/`. Run `python -m rag.auth demo` again after updating.
+**Upgrading:** version 1 kept accounts in `data/`; version 2 keeps them in `state/`. Run `python -m rag.auth demo` again after updating. Accounts with older roles are mapped automatically (e.g. `admin` → IT operations).
 
 Without a language model the app answers by quoting the best-matching sentences, with their sources. To use a local model, install [Ollama](https://ollama.com/download), then run `ollama pull llama3.1:8b` and `ollama pull nomic-embed-text`, and start the app; the sidebar shows when the model is connected.
 
@@ -86,7 +95,8 @@ Without a language model the app answers by quoting the best-matching sentences,
 docker compose up -d --build
 docker compose exec ollama ollama pull llama3.1:8b
 docker compose exec ollama ollama pull nomic-embed-text
-docker compose exec app python -m rag.auth create-admin itlead
+docker compose exec app python -m rag.auth create-admin itlead            # IT operations
+docker compose exec app python -m rag.auth add dplead --role data_protection
 docker compose exec app python -m rag.auth add policylead --role policy_owner --editor
 ```
 
@@ -94,7 +104,7 @@ The library and all state live on the `./state` volume; back it up (see `RECOVER
 
 ## Public demo (Streamlit Community Cloud)
 
-Deploy `app.py` with Python 3.12 and the secret `DEMO_MODE = "1"`. On first start the app builds the library and creates the three demo accounts. In demo mode the four original documents cannot be removed or replaced, demo accounts cannot be reset or disabled, and the network guard only records connections (it doesn't block them). Storage is temporary: uploads, accounts and logs reset when the app restarts.
+Deploy `app.py` with Python 3.12 and the secret `DEMO_MODE = "1"`. On first start the app builds the library and creates the eight demo accounts. In demo mode the four original documents cannot be removed or replaced, demo accounts cannot be reset or disabled, and the network guard only records connections (it doesn't block them). Storage is temporary: uploads, accounts and logs reset when the app restarts.
 
 ## How it works
 
@@ -113,12 +123,12 @@ ANSWER (every question)
 | Search: BM25 + rail synonyms, optional embeddings, rank fusion | `rag/retrieve.py` |
 | Answers with citations, "not found", fenced sources | `rag/answer.py` |
 | Quick checks (85 rules, each quoting its source, checked against the documents) | `rag/advisors.py` |
-| Accounts, roles, permissions, audit log | `rag/auth.py` |
+| Accounts, the eight roles and their permissions, audit log | `rag/auth.py` |
 | Request log, feedback, retention | `rag/usage.py` |
 | Opt-in chat history | `rag/history.py` |
 | Network guard | `rag/netguard.py` |
 | Test set and runs | `rag/testset.py` |
-| IT settings | `rag/settings.py` |
+| Settings (privacy: data protection lead; response time: IT operations) | `rag/settings.py` |
 | Web app | `app.py` |
 
 The slides mention a vector database such as ChromaDB. With about 200 passages, the embeddings are kept as a single matrix next to the index, which does the same job with nothing extra to install. A vector database becomes worthwhile at tens of thousands of passages.
@@ -139,7 +149,7 @@ These numbers are optimistic: the synonyms and the refusal threshold were tuned 
 
 ## Tests
 
-`python -m pytest -q` runs 66 tests: one acceptance test per user story, plus ingestion, search, every quick-check rule and its citation, sign-in, and a fake Ollama server for the language-model path.
+`python -m pytest -q` runs 70 tests: one acceptance test per user story, the role of every user group, the passenger version, plus ingestion, search, every quick-check rule and its citation, sign-in, and a fake Ollama server for the language-model path.
 
 ## Known limitations
 

@@ -63,10 +63,12 @@ def lib(base_library, tmp_path, monkeypatch):
     _point_config_to(tmp_path, monkeypatch)
     for f in (config.SNAPSHOTS_DIR,):
         shutil.rmtree(f, ignore_errors=True)
-    auth.create_user("staff1", "Sam Staff", "staff", "staff-pass-123", by="cli")
+    auth.create_user("staff1", "Sam Staff", "customer_relations", "staff-pass-123", by="cli")
+    auth.create_user("cond1", "Cal Conductor", "conductor", "conductor-pass-123", by="cli")
     auth.create_user("owner1", "Pat Owner", "policy_owner", "owner-pass-123", by="cli", doc_editor=True)
     auth.create_user("viewer1", "Val Viewer", "policy_owner", "viewer-pass-123", by="cli")
-    auth.create_user("it1", "Ira IT", "it", "itadmin-pass-123", by="cli")
+    auth.create_user("it1", "Ira IT", "it_ops", "itadmin-pass-123", by="cli")
+    auth.create_user("dp1", "Dana DP", "data_protection", "dataprot-pass-123", by="cli")
     return tmp_path
 
 
@@ -196,7 +198,7 @@ def test_test_set_has_no_wrong_answers(lib):
 def test_control_only_named_editors_change_documents_and_changes_are_logged(lib):
     """Only named users change documents; every change is logged."""
     pdf = policy_pdf(UMBRELLA)
-    for who in ("staff1", "viewer1", "it1"):
+    for who in ("staff1", "cond1", "viewer1", "it1", "dp1"):
         with pytest.raises(auth.PermissionDenied):
             library.add_document(who, pdf, "Lost Property Policy", "Lost property", "v1")
         with pytest.raises(auth.PermissionDenied):
@@ -205,7 +207,7 @@ def test_control_only_named_editors_change_documents_and_changes_are_logged(lib)
     library.remove_document("owner1", res["doc"]["id"], confirm="Lost property")
     events = [(e["event"], e["by"]) for e in auth.read_audit()]
     assert ("document_added", "owner1") in events and ("document_removed", "owner1") in events
-    assert sum(e == "permission_denied" for e, _ in events) == 6
+    assert sum(e == "permission_denied" for e, _ in events) == 10
 
 
 # ================================================================ IT and data protection
@@ -250,7 +252,7 @@ def test_access_control_staff_fails_every_admin_only_action(lib):
     """An employee account fails on every admin-only action."""
     pdf = policy_pdf(UMBRELLA)
     actions = [
-        lambda: auth.create_user("newbie", "New", "staff", "newbie-pass-123", by="staff1"),
+        lambda: auth.create_user("newbie", "New", "conductor", "newbie-pass-123", by="staff1"),
         lambda: auth.reset_password("owner1", by="staff1"),
         lambda: auth.update_user("owner1", by="staff1", active=False),
         lambda: auth.update_user("staff1", by="staff1", role="it"),
@@ -259,13 +261,32 @@ def test_access_control_staff_fails_every_admin_only_action(lib):
         lambda: library.remove_document("staff1", "atp", confirm="Accessible Travel Policy"),
         lambda: library.restore("staff1", "20260101T000000-000000Z"),
         lambda: settings.update("staff1", allow_chat_history=True),
+        lambda: settings.update("staff1", response_target_seconds=3),
+        lambda: library.deletion_check("staff1"),
         lambda: testset.save("staff1", []),
         lambda: usage.read_feedback("staff1"),
     ]
     for act in actions:
         with pytest.raises(auth.PermissionDenied):
             act()
-    assert auth.get_user("staff1").role == "staff" and auth.get_user("owner1").active
+    assert auth.get_user("staff1").role == "customer_relations" and auth.get_user("owner1").active
+
+
+def test_it_operations_and_data_protection_have_separate_duties(lib):
+    """IT runs accounts and backups; the data protection lead owns privacy settings and checks deletions."""
+    with pytest.raises(auth.PermissionDenied):
+        settings.update("it1", allow_chat_history=True)          # privacy setting: data protection only
+    settings.update("it1", response_target_seconds=5)            # operations setting: IT
+    with pytest.raises(auth.PermissionDenied):
+        settings.update("dp1", response_target_seconds=8)
+    with pytest.raises(auth.PermissionDenied):
+        auth.create_user("x1", "X", "conductor", "xx-pass-12345", by="dp1")
+    with pytest.raises(auth.PermissionDenied):
+        library.deletion_check("it1")
+    res = library.add_document("owner1", policy_pdf(UMBRELLA), "Lost Property Policy", "Lost property", "v1")
+    library.remove_document("owner1", res["doc"]["id"], confirm="Lost property")
+    rows = library.deletion_check("dp1")
+    assert len(rows) == 1 and rows[0]["leftovers"] == []
 
 
 def test_conversations_separate_and_not_stored_by_default(lib):
@@ -273,7 +294,7 @@ def test_conversations_separate_and_not_stored_by_default(lib):
     alice = auth.get_user("staff1")
     assert not history.save(alice, "question about a refund", "answer", [])          # off by default
     assert not (config.STATE_DIR / "history").exists()
-    settings.update("it1", allow_chat_history=True)
+    settings.update("dp1", allow_chat_history=True)
     assert not history.save(alice, "question about a refund", "answer", [])          # allowed, but not agreed
     auth.set_keep_history("staff1", True)
     alice = auth.get_user("staff1")
@@ -291,7 +312,7 @@ def test_logging_contains_no_passwords_or_unneeded_chat_content(lib):
     with pytest.raises(auth.AuthError):
         auth.authenticate("staff1", "staff-typo-999")
     a = answer(question, retriever(), use_llm=False)
-    usage.log_request("staff", "policy", a.generator, a.found, 0.3, len(a.sources))
+    usage.log_request("customer_relations", "policy", a.generator, a.found, 0.3, len(a.sources))
     usage.log_feedback("staff", "down", a.generator, [s.chunk_id for s in a.sources])   # no consent to share
     logs = all_text(config.STATE_DIR)
     for secret in ("staff-pass-123", "staff-typo-999", "Mrs Jones", "grandmother", a.text[:40]):
@@ -313,7 +334,7 @@ def test_deletion_removes_all_copies(lib):
     res = library.add_document("owner1", policy_pdf(UMBRELLA), "Lost Property Policy", "Lost property", "v1")
     doc = res["doc"]
     library.snapshot("extra restore point", "it1")                       # a restore point that contains it
-    settings.update("it1", allow_chat_history=True)
+    settings.update("dp1", allow_chat_history=True)
     auth.set_keep_history("staff1", True)
     a = answer("How long are umbrellas kept at lost property?", retriever(), use_llm=False)
     history.save(auth.get_user("staff1"), "umbrellas?", a.text, [s.__dict__ for s in a.sources if s.cited])
@@ -360,3 +381,19 @@ def test_r5_demo_documents_are_protected_in_public_demo(lib, monkeypatch):
     monkeypatch.setattr(config, "DEMO_MODE", True)
     with pytest.raises(library.LibraryError, match="protected"):
         library.remove_document("owner1", "atp", confirm="Accessible Travel Policy")
+
+
+# ================================================================ passengers (indirect users)
+def test_passengers_get_a_plain_version_with_its_source(lib):
+    """Passengers (indirect): correct and consistent answers. Staff can show or send a plain version."""
+    import ast
+    src = (ROOT / "app.py").read_text()
+    fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "passenger_version")
+    ns = {"re": __import__("re"), "doc_meta": lambda: {d["id"]: d for d in library.registry()}}
+    exec(compile(ast.Module([fn], []), "app.py", "exec"), ns)
+    from dataclasses import asdict
+    a = asdict(answer("Can a passenger take a bicycle on the train?", retriever(), use_llm=False))
+    text = ns["passenger_version"](a)
+    assert "[1]" not in text and "Most relevant" not in text                     # no internal markers
+    assert "Where this comes from: National Rail Conditions of Travel, Condition" in text
+    assert text == ns["passenger_version"](a)                                    # consistent
