@@ -40,11 +40,12 @@ def embed(texts: list[str], model: str | None = None) -> list[list[float]]:
 
 
 def chat(messages: list[dict], model: str | None = None, temperature: float = 0.0) -> str:
+    """Temperature 0 and a fixed seed: the same question with the same passages gives the same answer."""
     model = model or config.CHAT_MODEL
     try:
         r = requests.post(f"{config.OLLAMA_URL}/api/chat",
                           json={"model": model, "messages": messages, "stream": False,
-                                "options": {"temperature": temperature, "num_ctx": 8192}},
+                                "options": {"temperature": temperature, "seed": 42, "num_ctx": 8192}},
                           timeout=config.OLLAMA_TIMEOUT)
         r.raise_for_status()
         return r.json()["message"]["content"]

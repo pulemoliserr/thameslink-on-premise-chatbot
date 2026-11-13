@@ -36,6 +36,7 @@ SYNONYMS = {
     "bikes": ["cycle", "cycles"], "money": ["refund"], "late": ["delay"], "finish": ["complete"],
     "finishing": ["completing"], "staff": ["assistance"], "price": ["fare"], "cost": ["charge", "fare"],
     "broken": ["working", "order"], "closed": ["open"], "bring": ["take"],
+    "admin": ["administration"],
 }
 
 

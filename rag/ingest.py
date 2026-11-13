@@ -337,7 +337,7 @@ def table_chunks(doc: dict) -> list[Chunk]:
 # ---------------------------------------------------------------- main
 
 def load_documents() -> list[dict]:
-    with open(config.DOCUMENTS_FILE, encoding="utf-8") as f:
+    with open(config.DATA_DIR / "documents.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)["documents"]
 
 
@@ -365,22 +365,15 @@ def save_chunks(chunks: list[Chunk]) -> Path:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--embed", action="store_true", help="also compute embeddings with Ollama")
+    ap.add_argument("--embed", action="store_true", help="also compute embeddings with Ollama (if it is running)")
     args = ap.parse_args()
-
-    print("Reading documents …")
-    chunks = build_chunks()
-    out = save_chunks(chunks)
-    print(f"Saved {len(chunks)} passages to {out}")
-
-    stale = config.INDEX_DIR / "embeddings.npy"
-    if args.embed:
-        from .retrieve import build_embeddings
-        build_embeddings(chunks)
-    elif stale.exists():
-        stale.unlink()
-        (config.INDEX_DIR / "embeddings.json").unlink(missing_ok=True)
-        print("Removed old embeddings (run with --embed to rebuild them).")
+    from . import library, ollama_client
+    library.ensure_library()
+    print(f"Reading documents in {config.DATA_DIR} …")
+    n = library.build_index()            # also rebuilds embeddings when Ollama has the embedding model
+    print(f"Saved {n} passages to {library.index_file()}")
+    if args.embed and not ollama_client.has_model(config.EMBED_MODEL):
+        print(f"Embeddings skipped: start Ollama and run  ollama pull {config.EMBED_MODEL}")
 
 
 if __name__ == "__main__":
